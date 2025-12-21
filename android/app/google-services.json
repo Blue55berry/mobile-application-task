@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "674080292206",
+    "project_id": "sbs-crm-e6ea5",
+    "storage_bucket": "sbs-crm-e6ea5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:674080292206:android:0009986ee8e23cfa08d57f",
+        "android_client_info": {
+          "package_name": "com.example.sbs"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD4AAQ4qzIalRKoNxufPwBcAVh4RbhOzJM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

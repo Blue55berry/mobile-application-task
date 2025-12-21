@@ -6,8 +6,9 @@ import '../widgets/lead_item.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../models/lead_model.dart';
 import '../services/leads_service.dart';
-import '../services/call_overlay_service.dart';
 import '../services/team_service.dart';
+import '../services/auth_service.dart';
+import '../models/user_model.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -65,19 +66,6 @@ class DashboardScreenState extends State<DashboardScreen> {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _testSBSIcon(context),
-        backgroundColor: const Color(0xFF6C5CE7),
-        tooltip: 'Test SBS Caller ID',
-        child: const Text(
-          'SBS',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
-        ),
-      ),
       bottomNavigationBar: CustomBottomNavBar(
         currentIndex: _currentIndex,
         onTap: (index) {
@@ -85,39 +73,6 @@ class DashboardScreenState extends State<DashboardScreen> {
             Navigator.pushReplacementNamed(context, _getRouteName(index));
           }
         },
-      ),
-    );
-  }
-
-  void _testSBSIcon(BuildContext context) async {
-    final leadsService = Provider.of<LeadsService>(context, listen: false);
-    final overlayService = Provider.of<CallOverlayService>(
-      context,
-      listen: false,
-    );
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-
-    if (leadsService.leads.isEmpty) {
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
-          content: Text('Please add a lead first!'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    final testLead = leadsService.leads.first;
-
-    // Show in-app floating icon and popup
-    overlayService.testInAppOverlay(testLead);
-
-    if (!mounted) return;
-    scaffoldMessenger.showSnackBar(
-      SnackBar(
-        content: Text('Showing details for ${testLead.name}'),
-        backgroundColor: const Color(0xFF6C5CE7),
-        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -142,32 +97,171 @@ class DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2A3E),
-        borderRadius: BorderRadius.circular(30),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.search, color: Colors.grey),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                hintText: 'Search leads...',
-                hintStyle: TextStyle(color: Colors.grey),
-                border: InputBorder.none,
-              ),
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value;
-                });
-              },
+    return Consumer<AuthService>(
+      builder: (context, authService, child) {
+        final user = authService.currentUser;
+        final now = DateTime.now();
+        String greetingHourText = 'Good Morning';
+        if (now.hour >= 12 && now.hour < 17) {
+          greetingHourText = 'Good Afternoon';
+        } else if (now.hour >= 17 || now.hour < 4) {
+          greetingHourText = 'Good Evening';
+        }
+
+        return Column(
+          children: [
+            const SizedBox(height: 8),
+            // Top row: Profil + Search
+            Row(
+              children: [
+                // Profile Avatar
+                GestureDetector(
+                  onTap: () {
+                    Navigator.pushNamed(context, '/settings');
+                  },
+                  child: Container(
+                    width: 50,
+                    height: 50,
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFF6C5CE7).withValues(alpha: 0.5),
+                        width: 2,
+                      ),
+                    ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: user != null
+                            ? null
+                            : const LinearGradient(
+                                colors: [Color(0xFF6C5CE7), Color(0xFF8B7CE8)],
+                              ),
+                      ),
+                      child: user != null && user.photoUrl != null
+                          ? ClipOval(
+                              child: Image.network(
+                                user.photoUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return _buildDefaultAvatar(user);
+                                },
+                              ),
+                            )
+                          : _buildDefaultAvatar(user),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Search Box
+                Expanded(
+                  child: Container(
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2A2A3E),
+                      borderRadius: BorderRadius.circular(25),
+                      border: Border.all(
+                        color: const Color(0xFF3A3A4E),
+                        width: 1,
+                      ),
+                    ),
+                    child: TextField(
+                      onChanged: (value) {
+                        setState(() {
+                          _searchQuery = value;
+                        });
+                      },
+                      style: const TextStyle(color: Colors.white, fontSize: 15),
+                      decoration: InputDecoration(
+                        hintText: 'Search leads...',
+                        hintStyle: TextStyle(
+                          color: Colors.grey[500],
+                          fontSize: 14,
+                        ),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: Colors.grey[500],
+                          size: 20,
+                        ),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: Icon(
+                                  Icons.clear,
+                                  color: Colors.grey[500],
+                                  size: 18,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _searchQuery = '';
+                                  });
+                                },
+                              )
+                            : null,
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+            // Welcome Text below
+            Row(
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user != null
+                          ? '$greetingHourText, ${user.displayName.split(' ').first}!'
+                          : 'Welcome to SBS',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      user != null
+                          ? user.email
+                          : 'Manage your leads efficiently',
+                      style: TextStyle(color: Colors.grey[400], fontSize: 14),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDefaultAvatar(AppUser? user) {
+    String initial = 'U';
+
+    if (user != null) {
+      if (user.displayName.isNotEmpty) {
+        initial = user.displayName[0].toUpperCase();
+      } else if (user.email.isNotEmpty) {
+        initial = user.email[0].toUpperCase();
+      }
+    }
+
+    return Center(
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }

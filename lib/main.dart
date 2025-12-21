@@ -5,6 +5,7 @@ import 'screens/dashboard_screen.dart';
 import 'screens/leads_screen.dart';
 import 'screens/task_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/login_screen.dart';
 import 'screens/lead_details_screen.dart';
 import 'models/lead_model.dart';
 import 'services/leads_service.dart';
@@ -166,63 +167,82 @@ class MyApp extends StatelessWidget {
             }
           });
 
-          return MaterialApp(
-            navigatorKey: navigatorKey,
-            title: 'SBS CRM',
-            theme: AppTheme.lightTheme,
-            darkTheme: AppTheme.darkTheme,
-            themeMode: ThemeMode.system, // Follow system theme
-            debugShowCheckedModeBanner: false,
-            home: const DashboardScreen(),
-            onGenerateRoute: (settings) {
-              // Custom page transitions for all routes
-              Widget page;
-
-              if (settings.name == '/lead_details') {
-                final lead = settings.arguments as Lead;
-                page = LeadDetailScreen(lead: lead);
-              } else {
-                // Handle named routes
-                page = _getPageForRoute(settings.name ?? '/dashboard');
-              }
-
-              // Return custom animated page transition
-              return PageRouteBuilder(
-                settings: settings,
-                pageBuilder: (context, animation, secondaryAnimation) => page,
-                transitionDuration: const Duration(milliseconds: 300),
-                reverseTransitionDuration: const Duration(milliseconds: 250),
-                transitionsBuilder:
-                    (context, animation, secondaryAnimation, child) {
-                      // Smooth fade + slide transition
-                      const begin = Offset(0.05, 0);
-                      const end = Offset.zero;
-                      const curve = Curves.easeInOutCubic;
-
-                      var slideTween = Tween(
-                        begin: begin,
-                        end: end,
-                      ).chain(CurveTween(curve: curve));
-                      var fadeTween = Tween<double>(
-                        begin: 0.0,
-                        end: 1.0,
-                      ).chain(CurveTween(curve: curve));
-
-                      return FadeTransition(
-                        opacity: animation.drive(fadeTween),
-                        child: SlideTransition(
-                          position: animation.drive(slideTween),
-                          child: child,
+          return Consumer<AuthService>(
+            builder: (context, authService, child) {
+              return MaterialApp(
+                navigatorKey: navigatorKey,
+                title: 'SBS CRM',
+                theme: AppTheme.lightTheme,
+                darkTheme: AppTheme.darkTheme,
+                themeMode: ThemeMode.system,
+                debugShowCheckedModeBanner: false,
+                // Show login screen if not signed in, otherwise dashboard
+                home: authService.isLoading
+                    ? const Scaffold(
+                        backgroundColor: Color(0xFF1A1A2E),
+                        body: Center(
+                          child: CircularProgressIndicator(
+                            color: Color(0xFF6C5CE7),
+                          ),
                         ),
-                      );
-                    },
+                      )
+                    : authService.isSignedIn
+                    ? const DashboardScreen()
+                    : const LoginScreen(),
+                onGenerateRoute: (settings) {
+                  // Custom page transitions for all routes
+                  Widget page;
+
+                  if (settings.name == '/lead_details') {
+                    final lead = settings.arguments as Lead;
+                    page = LeadDetailScreen(lead: lead);
+                  } else {
+                    // Handle named routes
+                    page = _getPageForRoute(settings.name ?? '/dashboard');
+                  }
+
+                  // Return custom animated page transition
+                  return PageRouteBuilder(
+                    settings: settings,
+                    pageBuilder: (context, animation, secondaryAnimation) =>
+                        page,
+                    transitionDuration: const Duration(milliseconds: 300),
+                    reverseTransitionDuration: const Duration(
+                      milliseconds: 250,
+                    ),
+                    transitionsBuilder:
+                        (context, animation, secondaryAnimation, child) {
+                          // Smooth fade + slide transition
+                          const begin = Offset(0.05, 0);
+                          const end = Offset.zero;
+                          const curve = Curves.easeInOutCubic;
+
+                          var slideTween = Tween(
+                            begin: begin,
+                            end: end,
+                          ).chain(CurveTween(curve: curve));
+                          var fadeTween = Tween<double>(
+                            begin: 0.0,
+                            end: 1.0,
+                          ).chain(CurveTween(curve: curve));
+
+                          return FadeTransition(
+                            opacity: animation.drive(fadeTween),
+                            child: SlideTransition(
+                              position: animation.drive(slideTween),
+                              child: child,
+                            ),
+                          );
+                        },
+                  );
+                },
+                routes: {
+                  '/dashboard': (context) => const DashboardScreen(),
+                  '/leads': (context) => const LeadsScreen(),
+                  '/tasks': (context) => const TasksScreen(),
+                  '/settings': (context) => const SettingsScreen(),
+                },
               );
-            },
-            routes: {
-              '/dashboard': (context) => const DashboardScreen(),
-              '/leads': (context) => const LeadsScreen(),
-              '/tasks': (context) => const TasksScreen(),
-              '/settings': (context) => const SettingsScreen(),
             },
           );
         },
