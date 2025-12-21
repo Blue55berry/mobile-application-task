@@ -94,6 +94,7 @@ class LeadsScreenState extends State<LeadsScreen> {
         },
         backgroundColor: const Color(0xFF2A2A3E),
         selectedColor: const Color(0xFF6C5CE7),
+        side: BorderSide.none,
         labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.grey),
       ),
     );
@@ -112,7 +113,14 @@ class LeadsScreenState extends State<LeadsScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF2A2A3E),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -228,14 +236,21 @@ class LeadsScreenState extends State<LeadsScreen> {
                     TextField(
                       controller: nameController,
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Name',
-                        labelStyle: TextStyle(color: Colors.grey),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Colors.grey),
+                        labelStyle: const TextStyle(color: Colors.grey),
+                        filled: true,
+                        fillColor: const Color(0xFF1A1A2E),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
                         ),
                         focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF6C5CE7)),
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF6C5CE7),
+                            width: 1,
+                          ),
                         ),
                       ),
                     ),
@@ -243,14 +258,21 @@ class LeadsScreenState extends State<LeadsScreen> {
                     TextField(
                       controller: phoneController,
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Phone Number',
-                        labelStyle: TextStyle(color: Colors.grey),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Colors.grey),
+                        labelStyle: const TextStyle(color: Colors.grey),
+                        filled: true,
+                        fillColor: const Color(0xFF1A1A2E),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
                         ),
                         focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF6C5CE7)),
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF6C5CE7),
+                            width: 1,
+                          ),
                         ),
                       ),
                     ),
@@ -394,11 +416,14 @@ class _LeadCategoryDropdownState extends State<_LeadCategoryDropdown> {
               : (labels.isNotEmpty ? labels.first.name : null),
           dropdownColor: const Color(0xFF1A1A2E),
           style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Category',
-            labelStyle: TextStyle(color: Colors.grey),
-            enabledBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: Colors.grey),
+            labelStyle: const TextStyle(color: Colors.grey),
+            filled: true,
+            fillColor: const Color(0xFF1A1A2E),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
             ),
           ),
           items: labels.map((label) {

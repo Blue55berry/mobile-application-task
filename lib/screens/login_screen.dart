@@ -145,7 +145,33 @@ class _LoginScreenState extends State<LoginScreen> {
                           ).withValues(alpha: 0.5),
                         ),
                       ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 20),
+
+                // Register Later / Guest Button
+                if (!_isLoading)
+                  TextButton(
+                    onPressed: () async {
+                      final authService = Provider.of<AuthService>(
+                        context,
+                        listen: false,
+                      );
+                      final success = await authService.signInAsGuest();
+                      if (!context.mounted) return;
+                      if (success) {
+                        Navigator.pushReplacementNamed(context, '/dashboard');
+                      }
+                    },
+                    child: Text(
+                      'Register Later',
+                      style: TextStyle(
+                        color: Colors.grey[400],
+                        fontSize: 16,
+                        decoration: TextDecoration.underline,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 20),
 
                 // Features List
                 Container(

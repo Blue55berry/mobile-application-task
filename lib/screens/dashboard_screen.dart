@@ -9,6 +9,7 @@ import '../services/leads_service.dart';
 import '../services/team_service.dart';
 import '../services/auth_service.dart';
 import '../models/user_model.dart';
+import 'lead_details_screen.dart'; // Added missing import
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -18,9 +19,16 @@ class DashboardScreen extends StatefulWidget {
 
 class DashboardScreenState extends State<DashboardScreen> {
   final int _currentIndex = 0;
+  final TextEditingController _searchController = TextEditingController();
 
   String _selectedCategory = 'all';
-  String _searchQuery = ''; // Add this line
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,6 +56,10 @@ class DashboardScreenState extends State<DashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildHeader(),
+                if (_searchQuery.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _buildSearchResults(recentLeads),
+                ],
                 const SizedBox(height: 20),
                 _buildCategoryTabs(),
                 const SizedBox(height: 20),
@@ -123,13 +135,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                     width: 50,
                     height: 50,
                     padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0xFF6C5CE7).withValues(alpha: 0.5),
-                        width: 2,
-                      ),
-                    ),
+                    decoration: BoxDecoration(shape: BoxShape.circle),
                     child: Container(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
@@ -161,12 +167,20 @@ class DashboardScreenState extends State<DashboardScreen> {
                     decoration: BoxDecoration(
                       color: const Color(0xFF2A2A3E),
                       borderRadius: BorderRadius.circular(25),
-                      border: Border.all(
-                        color: const Color(0xFF3A3A4E),
-                        width: 1,
-                      ),
+                      boxShadow: _searchQuery.isNotEmpty
+                          ? [
+                              BoxShadow(
+                                color: const Color(
+                                  0xFF6C5CE7,
+                                ).withValues(alpha: 0.2),
+                                blurRadius: 8,
+                                spreadRadius: 1,
+                              ),
+                            ]
+                          : null,
                     ),
                     child: TextField(
+                      controller: _searchController,
                       onChanged: (value) {
                         setState(() {
                           _searchQuery = value;
@@ -181,7 +195,9 @@ class DashboardScreenState extends State<DashboardScreen> {
                         ),
                         prefixIcon: Icon(
                           Icons.search,
-                          color: Colors.grey[500],
+                          color: _searchQuery.isNotEmpty
+                              ? const Color(0xFF6C5CE7)
+                              : Colors.grey[500],
                           size: 20,
                         ),
                         suffixIcon: _searchQuery.isNotEmpty
@@ -193,6 +209,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                                 ),
                                 onPressed: () {
                                   setState(() {
+                                    _searchController.clear();
                                     _searchQuery = '';
                                   });
                                 },
@@ -240,6 +257,136 @@ class DashboardScreenState extends State<DashboardScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildSearchResults(List<Lead> allLeads) {
+    final searchResults = allLeads.where((lead) {
+      final query = _searchQuery.toLowerCase();
+      return lead.name.toLowerCase().contains(query) ||
+          (lead.phoneNumber?.contains(query) ?? false);
+    }).toList();
+
+    if (searchResults.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF2A2A3E),
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: const Center(
+          child: Text('No results found', style: TextStyle(color: Colors.grey)),
+        ),
+      );
+    }
+
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 300),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A3E),
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.person_search_rounded,
+                  color: Color(0xFF6C5CE7),
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Search Results (${searchResults.length})',
+                  style: TextStyle(
+                    color: Colors.grey[400],
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              itemCount: searchResults.length,
+              separatorBuilder: (context, index) => Divider(
+                height: 1,
+                color: Colors.white.withValues(alpha: 0.05),
+              ),
+              itemBuilder: (context, index) {
+                final lead = searchResults[index];
+                return ListTile(
+                  dense: true,
+                  leading: CircleAvatar(
+                    radius: 14,
+                    backgroundColor: const Color(
+                      0xFF6C5CE7,
+                    ).withValues(alpha: 0.1),
+                    child: Text(
+                      lead.name[0].toUpperCase(),
+                      style: const TextStyle(
+                        color: Color(0xFF6C5CE7),
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    lead.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  subtitle: lead.phoneNumber != null
+                      ? Text(
+                          lead.phoneNumber!,
+                          style: TextStyle(
+                            color: Colors.grey[500],
+                            fontSize: 11,
+                          ),
+                        )
+                      : null,
+                  onTap: () {
+                    // Navigate and clear search
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => LeadDetailScreen(lead: lead),
+                      ),
+                    ).then((_) {
+                      // Optional: Clear or keep based on preference.
+                      // USER requested "auto disappear it" once find it.
+                    });
+
+                    // Clear search input automatically
+                    setState(() {
+                      _searchController.clear();
+                      _searchQuery = '';
+                    });
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -295,6 +442,7 @@ class DashboardScreenState extends State<DashboardScreen> {
         },
         backgroundColor: const Color(0xFF2A2A3E),
         selectedColor: const Color(0xFF6C5CE7),
+        side: BorderSide.none,
         labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.grey),
       ),
     );
@@ -304,12 +452,22 @@ class DashboardScreenState extends State<DashboardScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF2A2A3E), Color(0xFF3A3A4E)],
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF2A2A3E),
+            const Color(0xFF2A2A3E).withValues(alpha: 0.8),
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -344,21 +502,23 @@ class DashboardScreenState extends State<DashboardScreen> {
                   LineChartBarData(
                     spots: _getSpots(),
                     isCurved: true,
+                    curveSmoothness: 0.4,
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF6C5CE7), Color(0xFFA29BFE)],
+                      colors: [
+                        Color(0xFF6C5CE7),
+                        Color(0xFFA29BFE),
+                        Color(0xFF6C5CE7),
+                      ],
                     ),
-                    barWidth: 3,
+                    barWidth: 4,
+                    isStrokeCapRound: true,
                     dotData: const FlDotData(show: false),
                     belowBarData: BarAreaData(
                       show: true,
                       gradient: LinearGradient(
                         colors: [
-                          const Color(
-                            0xFF6C5CE7,
-                          ).withAlpha((255 * 0.3).round()),
-                          const Color(
-                            0xFFA29BFE,
-                          ).withAlpha((255 * 0.1).round()),
+                          const Color(0xFF6C5CE7).withValues(alpha: 0.2),
+                          const Color(0xFF6C5CE7).withValues(alpha: 0.0),
                         ],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,

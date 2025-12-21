@@ -87,6 +87,7 @@ class TasksScreenState extends State<TasksScreen> {
         },
         backgroundColor: const Color(0xFF2A2A3E),
         selectedColor: const Color(0xFF6C5CE7),
+        side: BorderSide.none,
         labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.grey),
       ),
     );
@@ -145,7 +146,14 @@ class TasksScreenState extends State<TasksScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF2A2A3E),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -182,7 +190,14 @@ class TasksScreenState extends State<TasksScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: const Color(0xFF2A2A3E),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: ListTile(
         leading: Checkbox(
@@ -280,8 +295,7 @@ class TasksScreenState extends State<TasksScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
         color: colors[priority]?.withAlpha((255 * 0.2).round()) ?? Colors.grey,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: colors[priority] ?? Colors.grey),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         priority.toUpperCase(),
@@ -342,14 +356,21 @@ class TasksScreenState extends State<TasksScreen> {
                     TextField(
                       controller: titleController,
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Title',
-                        labelStyle: TextStyle(color: Colors.grey),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Colors.grey),
+                        labelStyle: const TextStyle(color: Colors.grey),
+                        filled: true,
+                        fillColor: const Color(0xFF1A1A2E),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
                         ),
                         focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF6C5CE7)),
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF6C5CE7),
+                            width: 1,
+                          ),
                         ),
                       ),
                     ),
@@ -357,14 +378,21 @@ class TasksScreenState extends State<TasksScreen> {
                     TextField(
                       controller: descriptionController,
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Description',
-                        labelStyle: TextStyle(color: Colors.grey),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Colors.grey),
+                        labelStyle: const TextStyle(color: Colors.grey),
+                        filled: true,
+                        fillColor: const Color(0xFF1A1A2E),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
                         ),
                         focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF6C5CE7)),
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF6C5CE7),
+                            width: 1,
+                          ),
                         ),
                       ),
                     ),
@@ -374,11 +402,14 @@ class TasksScreenState extends State<TasksScreen> {
                       initialValue: selectedCategory,
                       dropdownColor: const Color(0xFF1A1A2E),
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Category',
-                        labelStyle: TextStyle(color: Colors.grey),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Colors.grey),
+                        labelStyle: const TextStyle(color: Colors.grey),
+                        filled: true,
+                        fillColor: const Color(0xFF1A1A2E),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
                         ),
                       ),
                       items: ['jobs', 'internship', 'paid_internship']
@@ -402,11 +433,14 @@ class TasksScreenState extends State<TasksScreen> {
                       initialValue: selectedPriority,
                       dropdownColor: const Color(0xFF1A1A2E),
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Priority',
-                        labelStyle: TextStyle(color: Colors.grey),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Colors.grey),
+                        labelStyle: const TextStyle(color: Colors.grey),
+                        filled: true,
+                        fillColor: const Color(0xFF1A1A2E),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
                         ),
                       ),
                       items: ['high', 'medium', 'low']

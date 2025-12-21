@@ -25,7 +25,7 @@ class DashboardCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF2A2A3E),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -74,11 +74,24 @@ class DashboardCard extends StatelessWidget {
                     LineChartBarData(
                       spots: _generateRandomSpots(),
                       isCurved: true,
+                      curveSmoothness: 0.4,
                       gradient: LinearGradient(
-                        colors: [color.withAlpha((255 * 0.5).round()), color],
+                        colors: [color.withValues(alpha: 0.4), color],
                       ),
-                      barWidth: 2,
+                      barWidth: 3,
+                      isStrokeCapRound: true,
                       dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        gradient: LinearGradient(
+                          colors: [
+                            color.withValues(alpha: 0.2),
+                            color.withValues(alpha: 0.0),
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                      ),
                     ),
                   ],
                 ),

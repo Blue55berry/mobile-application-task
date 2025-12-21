@@ -18,6 +18,7 @@ import 'services/lead_broadcast_receiver.dart';
 import 'services/auth_service.dart';
 import 'services/team_service.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'utils/theme.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -42,19 +43,44 @@ Widget _getPageForRoute(String routeName) {
 const methodChannel = MethodChannel('com.example.sbs/call_methods');
 
 void main() async {
+  // Ensure Flutter is initialized first
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Initialize Firebase FIRST and wait for it
+  try {
+    debugPrint('🔥 Initializing Firebase...');
+    await Firebase.initializeApp();
+    debugPrint('✅ Firebase initialized successfully');
+  } catch (e) {
+    debugPrint('❌ Firebase initialization failed: $e');
+    // If we're on a platform that requires options (like Windows/Web without config),
+    // it will fail here. But on Android with google-services.json it should work.
+  }
+
+  // Set preferred orientations
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
   // Request necessary permissions
-  await Permission.notification.request();
-  await Permission.phone.request();
+  try {
+    await [Permission.notification, Permission.phone].request();
+  } catch (e) {
+    debugPrint('⚠️ Error requesting permissions: $e');
+  }
 
-  // Initialize Background Service (keep existing for compatibility)
-  await initializeBackgroundService();
+  // Initialize Background Service
+  try {
+    await initializeBackgroundService();
+  } catch (e) {
+    debugPrint('⚠️ Error initializing background service: $e');
+  }
 
-  // Setup MethodChannel listener for native Android events
+  // Setup MethodChannel listener
   _setupNativeCallListener();
 
-  // Start native call monitoring service
+  // Start native monitoring
   await _startNativeCallMonitoring();
 
   runApp(const MyApp());

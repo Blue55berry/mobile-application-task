@@ -179,25 +179,21 @@ class CallOverlayService : Service() {
                 android.database.sqlite.SQLiteDatabase.OPEN_READONLY
             )
             
-            // Try both 'phone' and 'phoneNumber' columns, and normalize phone numbers
-            val normalizedPhone = phoneNumber.replace(Regex("[^0-9]"), "") // Remove non-digits
+            // Normalize input phone number (keep only last 10 digits for better matching)
+            val digitsOnly = phoneNumber.replace(Regex("[^0-9]"), "")
+            val last10 = if (digitsOnly.length >= 10) digitsOnly.substring(digitsOnly.length - 10) else digitsOnly
             
-            Log.d(TAG, "🔍 Querying database for phone: $phoneNumber (normalized: $normalizedPhone)")
+            Log.d(TAG, "🔍 Querying database for phone: $phoneNumber (digits: $digitsOnly, last10: $last10)")
             
-            // Try phoneNumber column first
-            var cursor = db.rawQuery(
-                "SELECT * FROM leads WHERE phoneNumber = ? OR phoneNumber = ?",
-                arrayOf(phoneNumber, normalizedPhone)
+            // Query with multiple formats to be safe
+            val cursor = db.rawQuery(
+                "SELECT * FROM leads WHERE " +
+                "phoneNumber = ? OR " +
+                "phoneNumber LIKE ? OR " +
+                "phone = ? OR " +
+                "phone LIKE ?",
+                arrayOf(phoneNumber, "%$last10", phoneNumber, "%$last10")
             )
-            
-            // If not found, try 'phone' column
-            if (!cursor.moveToFirst()) {
-                cursor.close()
-                cursor = db.rawQuery(
-                    "SELECT * FROM leads WHERE phone = ? OR phone = ?",
-                    arrayOf(phoneNumber, normalizedPhone)
-                )
-            }
             
             val lead = if (cursor.moveToFirst()) {
                 val idIndex = cursor.getColumnIndex("id")
