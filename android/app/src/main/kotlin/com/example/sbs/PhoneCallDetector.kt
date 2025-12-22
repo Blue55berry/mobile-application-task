@@ -168,6 +168,11 @@ class PhoneCallDetector(private val context: Context) {
                     lastState == TelephonyManager.CALL_STATE_IDLE -> {
                         // Outgoing call started
                         isIncoming = false
+                        // Try to get number from CallLog if not available
+                        if (lastPhoneNumber == null) {
+                            lastPhoneNumber = getLastCallNumberFromCallLog()
+                            Log.d(TAG, "📞 Got outgoing number from CallLog: $lastPhoneNumber")
+                        }
                         Log.d(TAG, "📞 OUTGOING CALL: $lastPhoneNumber")
                         callback?.onOutgoingCall(lastPhoneNumber)
                     }
@@ -186,5 +191,40 @@ class PhoneCallDetector(private val context: Context) {
         }
         
         lastState = state
+    }
+    
+    /**
+     * Get the last call number from CallLog
+     * Fallback for Android 12+ where TelephonyCallback doesn't provide phone numbers
+     */
+    private fun getLastCallNumberFromCallLog(): String? {
+        try {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) 
+                != PackageManager.PERMISSION_GRANTED) {
+                Log.w(TAG, "No READ_CALL_LOG permission")
+                return null
+            }
+            
+            val cursor = context.contentResolver.query(
+                android.provider.CallLog.Calls.CONTENT_URI,
+                arrayOf(android.provider.CallLog.Calls.NUMBER, android.provider.CallLog.Calls.TYPE),
+                null,
+                null,
+                "${android.provider.CallLog.Calls.DATE} DESC"
+            )
+            
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val number = it.getString(0)
+                    Log.d(TAG, "📞 Last call from CallLog: $number")
+                    return number
+                }
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Permission denied to read CallLog", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading CallLog", e)
+        }
+        return null
     }
 }

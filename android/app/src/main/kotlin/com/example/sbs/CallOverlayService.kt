@@ -50,6 +50,7 @@ class CallOverlayService : Service() {
     private var currentLead: Lead? = null
     private var isFloatingIconVisible = false
     private var isPopupVisible = false
+    private var isQueryComplete = false  // Track if database query is complete
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var phoneCallDetector: PhoneCallDetector? = null
@@ -187,6 +188,14 @@ class CallOverlayService : Service() {
 
     private fun handleIncomingCall(phoneNumber: String?) {
         Log.d(TAG, "📞 Incoming call: $phoneNumber")
+        
+        // Skip if phone number is invalid or Unknown
+        val digits = phoneNumber?.replace(Regex("[^0-9]"), "") ?: ""
+        if (digits.length < 6 || phoneNumber == "Unknown") {
+            Log.d(TAG, "📞 Skipping invalid incoming call number: $phoneNumber")
+            return
+        }
+        
         // Remove any existing popup/icon from previous call
         removePopup()
         removeFloatingIcon()
@@ -199,6 +208,14 @@ class CallOverlayService : Service() {
 
     private fun handleOutgoingCall(phoneNumber: String?) {
         Log.d(TAG, "📞 Outgoing call: $phoneNumber")
+        
+        // Skip if phone number is invalid or Unknown
+        val digits = phoneNumber?.replace(Regex("[^0-9]"), "") ?: ""
+        if (digits.length < 6 || phoneNumber == "Unknown") {
+            Log.d(TAG, "📞 Skipping invalid outgoing call number: $phoneNumber")
+            return
+        }
+        
         // Remove any existing popup/icon from previous call
         removePopup()
         removeFloatingIcon()
@@ -225,9 +242,14 @@ class CallOverlayService : Service() {
 
     private fun queryLeadAndShowOverlay(phoneNumber: String?, isIncoming: Boolean) {
         if (phoneNumber == null) return
+        
+        // Reset query state
+        isQueryComplete = false
+        
         serviceScope.launch {
             currentLead = queryLeadFromDatabase(phoneNumber)
-            Log.d(TAG, "🔍 Lead lookup result: ${if (currentLead != null) "FOUND" else "NOT FOUND"}")
+            isQueryComplete = true  // Mark query as complete
+            Log.d(TAG, "🔍 Lead lookup result: ${if (currentLead != null) "FOUND: ${currentLead?.name}" else "NOT FOUND"}")
             
             // Show floating icon
             showFloatingIcon()
@@ -458,11 +480,16 @@ class CallOverlayService : Service() {
                 }
                 android.view.MotionEvent.ACTION_UP -> {
                     if (!isDragging) {
-                        // It's a click - show popup for saved contacts, otherwise toggle
-                        if (currentLead != null) {
-                            showPopup()
+                        // Only show popup if query is complete to avoid stale data
+                        if (isQueryComplete) {
+                            if (currentLead != null) {
+                                showPopup()
+                            } else {
+                                togglePopup()
+                            }
                         } else {
-                            togglePopup()
+                            Log.d(TAG, "📞 Query not complete, waiting...")
+                            // Query still in progress, show popup will be triggered when complete
                         }
                     }
                     isDragging = false
