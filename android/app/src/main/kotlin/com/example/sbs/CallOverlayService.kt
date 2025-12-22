@@ -187,6 +187,11 @@ class CallOverlayService : Service() {
 
     private fun handleIncomingCall(phoneNumber: String?) {
         Log.d(TAG, "📞 Incoming call: $phoneNumber")
+        // Remove any existing popup/icon from previous call
+        removePopup()
+        removeFloatingIcon()
+        // Clear previous lead state to ensure fresh lookup
+        currentLead = null
         currentPhoneNumber = phoneNumber
         queryLeadAndShowOverlay(phoneNumber, isIncoming = true)
         updateNotification("Incoming call: ${phoneNumber ?: "Unknown"}")
@@ -194,6 +199,11 @@ class CallOverlayService : Service() {
 
     private fun handleOutgoingCall(phoneNumber: String?) {
         Log.d(TAG, "📞 Outgoing call: $phoneNumber")
+        // Remove any existing popup/icon from previous call
+        removePopup()
+        removeFloatingIcon()
+        // Clear previous lead state to ensure fresh lookup
+        currentLead = null
         currentPhoneNumber = phoneNumber
         queryLeadAndShowOverlay(phoneNumber, isIncoming = false)
         updateNotification("Outgoing call: ${phoneNumber ?: "Unknown"}")
@@ -273,48 +283,70 @@ class CallOverlayService : Service() {
             }
             allLeadsCursor.close()
             
-            // Normalize phone number: remove all non-digits and get last 10 digits
+            // Normalize incoming phone number: remove all non-digits
             val digitsOnly = phoneNumber.replace(Regex("[^0-9]"), "")
-            val last10Digits = if (digitsOnly.length >= 10) {
+            val incomingLast10 = if (digitsOnly.length >= 10) {
                 digitsOnly.takeLast(10)
             } else {
                 digitsOnly
             }
             
-            Log.d(TAG, "🔍 Searching for: '$phoneNumber' -> normalized: '$last10Digits'")
+            Log.d(TAG, "🔍 Searching for: '$phoneNumber' -> normalized last10: '$incomingLast10'")
             
-            // Simple query: match if phoneNumber contains the last 10 digits
-            val searchPattern = "%$last10Digits%"
-            val cursor = db.rawQuery(
-                "SELECT * FROM leads WHERE phoneNumber LIKE ? LIMIT 1",
-                arrayOf(searchPattern)
-            )
-            
-            Log.d(TAG, "🔍 Query with pattern '$searchPattern' returned ${cursor.count} results")
-            
-            val lead = if (cursor.moveToFirst()) {
-                val idIndex = cursor.getColumnIndex("id")
-                val nameIndex = cursor.getColumnIndex("name")
-                val categoryIndex = cursor.getColumnIndex("category")
-                
-                val foundLead = Lead(
-                    id = if (idIndex >= 0) cursor.getInt(idIndex) else 0,
-                    name = if (nameIndex >= 0) cursor.getString(nameIndex) ?: "Unknown" else "Unknown",
-                    phone = phoneNumber,
-                    email = cursor.getColumnIndex("email").let { if (it >= 0) cursor.getString(it) else null },
-                    category = if (categoryIndex >= 0) cursor.getString(categoryIndex) ?: "General" else "General",
-                    status = cursor.getColumnIndex("status").let { if (it >= 0) cursor.getString(it) ?: "New" else "New" },
-                    isVip = cursor.getColumnIndex("isVip").let { if (it >= 0) cursor.getInt(it) == 1 else false }
-                )
-                Log.d(TAG, "✅ FOUND lead: ${foundLead.name} (ID: ${foundLead.id}, Category: ${foundLead.category})")
-                foundLead
-            } else {
-                Log.d(TAG, "❌ No lead found for: $phoneNumber (pattern: $searchPattern)")
-                null
+            // CRITICAL: If no valid digits, return null immediately
+            if (incomingLast10.length < 6) {
+                Log.d(TAG, "❌ Phone number too short or invalid, returning null")
+                db.close()
+                return@withContext null
             }
             
+            // Query all leads and compare normalized numbers
+            val cursor = db.rawQuery("SELECT * FROM leads", null)
+            Log.d(TAG, "📊 Checking ${cursor.count} leads for match")
+            
+            var lead: Lead? = null
+
+            while (cursor.moveToNext()) {
+                val phoneIndex = cursor.getColumnIndex("phoneNumber")
+                if (phoneIndex >= 0) {
+                    val dbPhone = cursor.getString(phoneIndex) ?: ""
+                    // Normalize database phone number
+                    val dbDigitsOnly = dbPhone.replace(Regex("[^0-9]"), "")
+                    val dbLast10 = if (dbDigitsOnly.length >= 10) {
+                        dbDigitsOnly.takeLast(10)
+                    } else {
+                        dbDigitsOnly
+                    }
+                    
+                    Log.d(TAG, "   Comparing: incoming='$incomingLast10' vs db='$dbLast10' (${cursor.getString(cursor.getColumnIndex("name"))})")
+                    
+                    // Exact match of last 10 digits
+                    if (incomingLast10 == dbLast10 && incomingLast10.isNotEmpty()) {
+                        val idIndex = cursor.getColumnIndex("id")
+                        val nameIndex = cursor.getColumnIndex("name")
+                        val categoryIndex = cursor.getColumnIndex("category")
+                        
+                        lead = Lead(
+                            id = if (idIndex >= 0) cursor.getInt(idIndex) else 0,
+                            name = if (nameIndex >= 0) cursor.getString(nameIndex) ?: "Unknown" else "Unknown",
+                            phone = phoneNumber,
+                            email = cursor.getColumnIndex("email").let { if (it >= 0) cursor.getString(it) else null },
+                            category = if (categoryIndex >= 0) cursor.getString(categoryIndex) ?: "General" else "General",
+                            status = cursor.getColumnIndex("status").let { if (it >= 0) cursor.getString(it) ?: "New" else "New" },
+                            isVip = cursor.getColumnIndex("isVip").let { if (it >= 0) cursor.getInt(it) == 1 else false }
+                        )
+                        Log.d(TAG, "✅ FOUND exact match: ${lead.name} (ID: ${lead.id})")
+                        break
+                    }
+                }
+            }
             cursor.close()
             db.close()
+            
+            if (lead == null) {
+                Log.d(TAG, "❌ No lead found for: $phoneNumber (normalized: $incomingLast10)")
+            }
+            
             lead
         } catch (e: Exception) {
             Log.e(TAG, "❌ Database query error: ${e.message}", e)
