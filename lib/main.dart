@@ -13,7 +13,6 @@ import 'services/task_service.dart';
 import 'services/label_service.dart';
 import 'services/enhanced_call_service.dart';
 import 'services/call_overlay_service.dart';
-import 'services/background_service.dart';
 import 'services/lead_broadcast_receiver.dart';
 import 'services/auth_service.dart';
 import 'services/team_service.dart';
@@ -68,13 +67,6 @@ void main() async {
     await [Permission.notification, Permission.phone].request();
   } catch (e) {
     debugPrint('⚠️ Error requesting permissions: $e');
-  }
-
-  // Initialize Background Service
-  try {
-    await initializeBackgroundService();
-  } catch (e) {
-    debugPrint('⚠️ Error initializing background service: $e');
   }
 
   // Setup MethodChannel listener
@@ -141,7 +133,6 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        // Authentication Service (must be first for other services to use)
         ChangeNotifierProvider(create: (_) => AuthService()),
         ChangeNotifierProvider(create: (_) => CallOverlayService()),
         ChangeNotifierProvider(create: (_) => EnhancedCallService()),

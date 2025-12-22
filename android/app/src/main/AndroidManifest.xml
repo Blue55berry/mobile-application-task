@@ -2,7 +2,7 @@
     <!-- Permissions for system overlay and call detection -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/> <!-- Android 14+ -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/> <!-- Android 14+ - use specialUse instead of phoneCall -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
     <uses-permission android:name="android.permission.CALL_PHONE"/>
@@ -43,36 +43,38 @@
             android:name="flutterEmbedding"
             android:value="2" />
             
-        <!-- Overlay Service for system-wide caller ID popup -->
-        <service
-            android:name="flutter_overlay_window.OverlayService"
-            android:exported="false"
-            android:foregroundServiceType="phoneCall" />
-
-        <!-- Background Service for always-on call monitoring -->
-        <service
-            android:name="id.flutter.flutter_background_service.BackgroundService"
-            android:foregroundServiceType="phoneCall"
-            />
             
         <!-- Native Call Overlay Service -->
         <service
             android:name=".CallOverlayService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="phoneCall" />
+            android:foregroundServiceType="specialUse">
+            <property 
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="call_overlay_for_crm" />
+        </service>
             
-        <!-- Boot Receiver for device startup -->
+        <!-- Static BroadcastReceiver for incoming calls (works on all Android versions) -->
         <receiver
-            android:name="id.flutter.flutter_background_service.BootReceiver"
+            android:name=".IncomingCallReceiver"
             android:enabled="true"
             android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED"/>
-                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
-                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            <intent-filter android:priority="999">
+                <action android:name="android.intent.action.PHONE_STATE" />
             </intent-filter>
         </receiver>
+        
+        <!-- Receiver for outgoing calls -->
+        <receiver
+            android:name=".OutgoingCallReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter android:priority="999">
+                <action android:name="android.intent.action.NEW_OUTGOING_CALL" />
+            </intent-filter>
+        </receiver>
+            
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

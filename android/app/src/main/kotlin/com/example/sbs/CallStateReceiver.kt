@@ -98,11 +98,21 @@ class CallStateReceiver(private val context: Context) {
     
     /**
      * Android 12+ implementation using TelephonyCallback
+     * Note: On Android 12+, the phone number is NOT provided in the callback.
+     * We need to get it from the CallLog for incoming calls.
      */
     @RequiresApi(Build.VERSION_CODES.S)
     private fun startTelephonyCallback() {
         telephonyCallback = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
             override fun onCallStateChanged(state: Int) {
+                // For incoming calls on Android 12+, get phone number from CallLog
+                if (state == TelephonyManager.CALL_STATE_RINGING && currentPhoneNumber == null) {
+                    getLastIncomingNumber()?.let { number ->
+                        currentPhoneNumber = number
+                        isOutgoingCall = false
+                        Log.d(TAG, "📞 Got incoming number from CallLog: $number")
+                    }
+                }
                 handleCallStateChange(state)
             }
         }
@@ -116,6 +126,33 @@ class CallStateReceiver(private val context: Context) {
         } catch (e: SecurityException) {
             Log.e(TAG, "Permission denied for phone state monitoring", e)
         }
+    }
+    
+    /**
+     * Get the last incoming call number from CallLog
+     * Used for Android 12+ where TelephonyCallback doesn't provide the number
+     */
+    private fun getLastIncomingNumber(): String? {
+        try {
+            val cursor = context.contentResolver.query(
+                android.provider.CallLog.Calls.CONTENT_URI,
+                arrayOf(android.provider.CallLog.Calls.NUMBER, android.provider.CallLog.Calls.TYPE),
+                "${android.provider.CallLog.Calls.TYPE} = ?",
+                arrayOf(android.provider.CallLog.Calls.INCOMING_TYPE.toString()),
+                "${android.provider.CallLog.Calls.DATE} DESC"
+            )
+            
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    return it.getString(0)
+                }
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Permission denied to read CallLog", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading CallLog", e)
+        }
+        return null
     }
     
     /**

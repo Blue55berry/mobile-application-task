@@ -258,11 +258,23 @@ class DatabaseService {
 
   Future<Lead?> getLeadByPhone(String phoneNumber) async {
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'leads',
-      where: 'phoneNumber = ?',
-      whereArgs: [phoneNumber],
-      limit: 1,
+
+    // Normalize phone number: keep only digits and get last 10
+    final normalizedPhone = phoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
+    final last10Digits = normalizedPhone.length >= 10
+        ? normalizedPhone.substring(normalizedPhone.length - 10)
+        : normalizedPhone;
+
+    // Use LIKE to match phone numbers regardless of country code or formatting
+    final List<Map<String, dynamic>> maps = await db.rawQuery(
+      '''
+      SELECT * FROM leads 
+      WHERE phoneNumber LIKE ? 
+         OR phoneNumber LIKE ?
+         OR phoneNumber = ?
+      LIMIT 1
+      ''',
+      ['%$last10Digits%', '%$phoneNumber%', phoneNumber],
     );
 
     if (maps.isEmpty) return null;

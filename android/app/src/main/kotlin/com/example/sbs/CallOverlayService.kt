@@ -17,6 +17,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import android.content.pm.ServiceInfo
 import kotlinx.coroutines.*
 
 class CallOverlayService : Service() {
@@ -51,6 +52,29 @@ class CallOverlayService : Service() {
     private var isPopupVisible = false
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var phoneCallDetector: PhoneCallDetector? = null
+
+    private val callDetectorCallback = object : PhoneCallDetector.CallStateCallback {
+        override fun onIncomingCall(phoneNumber: String?) {
+            Log.d(TAG, "📞 Callback: Incoming call from $phoneNumber")
+            handleIncomingCall(phoneNumber)
+        }
+        
+        override fun onOutgoingCall(phoneNumber: String?) {
+            Log.d(TAG, "📞 Callback: Outgoing call to $phoneNumber")
+            handleOutgoingCall(phoneNumber)
+        }
+        
+        override fun onCallAnswered() {
+            Log.d(TAG, "📞 Callback: Call answered")
+            handleCallStarted()
+        }
+        
+        override fun onCallEnded() {
+            Log.d(TAG, "📞 Callback: Call ended")
+            handleCallEnded()
+        }
+    }
 
     private val callStateBroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -79,13 +103,54 @@ class CallOverlayService : Service() {
         Log.d(TAG, "Service created")
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification("Monitoring calls..."))
+        
+        // Use SPECIAL_USE type for Android 14+ (doesn't require DIALER role)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID, 
+                createNotification("Monitoring calls..."),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, createNotification("Monitoring calls..."))
+
+        }
+        
         registerCallStateReceiver()
-        Log.d(TAG, "Service initialized successfully")
+        
+        // Initialize PhoneCallDetector for direct call monitoring
+        phoneCallDetector = PhoneCallDetector(this)
+        phoneCallDetector?.setCallback(callDetectorCallback)
+        phoneCallDetector?.startListening()
+        
+        Log.d(TAG, "✅ Service initialized successfully with PhoneCallDetector")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand")
+        Log.d(TAG, "onStartCommand: action=${intent?.action}")
+        
+        // Handle intents from static BroadcastReceivers
+        when (intent?.action) {
+            "com.example.sbs.INCOMING_CALL" -> {
+                val phoneNumber = intent.getStringExtra("phone_number")
+                Log.d(TAG, "📞 Received INCOMING_CALL intent: $phoneNumber")
+                handleIncomingCall(phoneNumber)
+            }
+            "com.example.sbs.OUTGOING_CALL" -> {
+                val phoneNumber = intent.getStringExtra("phone_number")
+                Log.d(TAG, "📞 Received OUTGOING_CALL intent: $phoneNumber")
+                handleOutgoingCall(phoneNumber)
+            }
+            "com.example.sbs.CALL_STARTED" -> {
+                Log.d(TAG, "📞 Received CALL_STARTED intent")
+                handleCallStarted()
+            }
+            "com.example.sbs.CALL_ENDED" -> {
+                Log.d(TAG, "📞 Received CALL_ENDED intent")
+                handleCallEnded()
+            }
+        }
+        
         return START_STICKY
     }
 
@@ -94,6 +159,8 @@ class CallOverlayService : Service() {
     override fun onDestroy() {
         Log.d(TAG, "Service destroying")
         try {
+            phoneCallDetector?.stopListening()
+            phoneCallDetector = null
             unregisterReceiver(callStateBroadcastReceiver)
         } catch (e: Exception) {
             Log.e(TAG, "Error unregistering receiver", e)
@@ -166,12 +233,28 @@ class CallOverlayService : Service() {
 
     private suspend fun queryLeadFromDatabase(phoneNumber: String): Lead? = withContext(Dispatchers.IO) {
         try {
-            // Access the database directly
-            val dbPath = getDatabasePath("sbs_database.db")
-            if (!dbPath.exists()) {
-                Log.d(TAG, "Database not found at: ${dbPath.absolutePath}")
+            // Try multiple database paths
+            val possiblePaths = listOf(
+                getDatabasePath("sbs_database.db"),
+                java.io.File(applicationContext.filesDir.parentFile, "databases/sbs_database.db"),
+                java.io.File("/data/data/${packageName}/databases/sbs_database.db")
+            )
+            
+            var dbPath: java.io.File? = null
+            for (path in possiblePaths) {
+                Log.d(TAG, "🔍 Checking DB path: ${path.absolutePath} exists=${path.exists()}")
+                if (path.exists()) {
+                    dbPath = path
+                    break
+                }
+            }
+            
+            if (dbPath == null || !dbPath.exists()) {
+                Log.e(TAG, "❌ Database file not found at any path!")
                 return@withContext null
             }
+            
+            Log.d(TAG, "✅ Using database at: ${dbPath.absolutePath}")
             
             val db = android.database.sqlite.SQLiteDatabase.openDatabase(
                 dbPath.absolutePath,
@@ -179,62 +262,62 @@ class CallOverlayService : Service() {
                 android.database.sqlite.SQLiteDatabase.OPEN_READONLY
             )
             
-            // Normalize input phone number (keep only last 10 digits for better matching)
+            // First, let's see all leads in the database
+            val allLeadsCursor = db.rawQuery("SELECT id, name, phoneNumber FROM leads LIMIT 10", null)
+            Log.d(TAG, "📊 Total leads in DB: ${allLeadsCursor.count}")
+            while (allLeadsCursor.moveToNext()) {
+                val id = allLeadsCursor.getInt(0)
+                val name = allLeadsCursor.getString(1)
+                val phone = allLeadsCursor.getString(2)
+                Log.d(TAG, "   Lead #$id: $name - $phone")
+            }
+            allLeadsCursor.close()
+            
+            // Normalize phone number: remove all non-digits and get last 10 digits
             val digitsOnly = phoneNumber.replace(Regex("[^0-9]"), "")
-            val last10 = if (digitsOnly.length >= 10) digitsOnly.substring(digitsOnly.length - 10) else digitsOnly
+            val last10Digits = if (digitsOnly.length >= 10) {
+                digitsOnly.takeLast(10)
+            } else {
+                digitsOnly
+            }
             
-            Log.d(TAG, "🔍 Querying database for phone: $phoneNumber (digits: $digitsOnly, last10: $last10)")
+            Log.d(TAG, "🔍 Searching for: '$phoneNumber' -> normalized: '$last10Digits'")
             
-            // Query with multiple formats to be safe
+            // Simple query: match if phoneNumber contains the last 10 digits
+            val searchPattern = "%$last10Digits%"
             val cursor = db.rawQuery(
-                "SELECT * FROM leads WHERE " +
-                "phoneNumber = ? OR " +
-                "phoneNumber LIKE ? OR " +
-                "phone = ? OR " +
-                "phone LIKE ?",
-                arrayOf(phoneNumber, "%$last10", phoneNumber, "%$last10")
+                "SELECT * FROM leads WHERE phoneNumber LIKE ? LIMIT 1",
+                arrayOf(searchPattern)
             )
+            
+            Log.d(TAG, "🔍 Query with pattern '$searchPattern' returned ${cursor.count} results")
             
             val lead = if (cursor.moveToFirst()) {
                 val idIndex = cursor.getColumnIndex("id")
                 val nameIndex = cursor.getColumnIndex("name")
-                val emailIndex = cursor.getColumnIndex("email")
                 val categoryIndex = cursor.getColumnIndex("category")
-                val statusIndex = cursor.getColumnIndex("status")
-                val isVipIndex = cursor.getColumnIndex("isVip")
                 
-                // Also try 'phoneNumber' column for phone
-                val phoneIndex = cursor.getColumnIndex("phoneNumber")
-                val phoneAlt = cursor.getColumnIndex("phone")
-                val actualPhone = when {
-                    phoneIndex >= 0 -> cursor.getString(phoneIndex)
-                    phoneAlt >= 0 -> cursor.getString(phoneAlt)
-                    else -> phoneNumber
-                }
-                
-                val leadData = Lead(
+                val foundLead = Lead(
                     id = if (idIndex >= 0) cursor.getInt(idIndex) else 0,
-                    name = if (nameIndex >= 0) cursor.getString(nameIndex) else "Unknown",
-                    phone = actualPhone ?: phoneNumber,
-                    email = if (emailIndex >= 0) cursor.getString(emailIndex) else null,
-                    category = if (categoryIndex >= 0) cursor.getString(categoryIndex) else "General",
-                    status = if (statusIndex >= 0) cursor.getString(statusIndex) else "New",
-                    isVip = if (isVipIndex >= 0) cursor.getInt(isVipIndex) == 1 else false
+                    name = if (nameIndex >= 0) cursor.getString(nameIndex) ?: "Unknown" else "Unknown",
+                    phone = phoneNumber,
+                    email = cursor.getColumnIndex("email").let { if (it >= 0) cursor.getString(it) else null },
+                    category = if (categoryIndex >= 0) cursor.getString(categoryIndex) ?: "General" else "General",
+                    status = cursor.getColumnIndex("status").let { if (it >= 0) cursor.getString(it) ?: "New" else "New" },
+                    isVip = cursor.getColumnIndex("isVip").let { if (it >= 0) cursor.getInt(it) == 1 else false }
                 )
-                
-                Log.d(TAG, "✅ Lead found: ${leadData.name} (${leadData.category})")
-                leadData
+                Log.d(TAG, "✅ FOUND lead: ${foundLead.name} (ID: ${foundLead.id}, Category: ${foundLead.category})")
+                foundLead
             } else {
-                Log.d(TAG, "❌ No lead found for: $phoneNumber")
+                Log.d(TAG, "❌ No lead found for: $phoneNumber (pattern: $searchPattern)")
                 null
             }
             
             cursor.close()
             db.close()
-            
             lead
         } catch (e: Exception) {
-            Log.e(TAG, "Database query error", e)
+            Log.e(TAG, "❌ Database query error: ${e.message}", e)
             null
         }
     }

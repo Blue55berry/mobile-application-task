@@ -14,7 +14,7 @@ class AuthService extends ChangeNotifier {
   final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
 
   // Use getters with safety checks to avoid early/missing initialization issues
-  Future<void> _ensureFirebaseInitialized() async {
+Future<void> _ensureFirebaseInitialized() async {
     if (Firebase.apps.isEmpty) {
       debugPrint(
         '🔄 Firebase not initialized. Attempting auto-initialization...',

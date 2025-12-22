@@ -60,29 +60,14 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // App Logo/Icon
-                Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF6C5CE7), Color(0xFF8B7CE8)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF6C5CE7).withValues(alpha: 0.3),
-                        blurRadius: 20,
-                        spreadRadius: 5,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.business_center,
-                    size: 60,
-                    color: Colors.white,
+                // SBS Logo Text
+                const Text(
+                  'SBS',
+                  style: TextStyle(
+                    color: Color(0xFF6C5CE7),
+                    fontSize: 72,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 8,
                   ),
                 ),
                 const SizedBox(height: 40),

@@ -152,7 +152,7 @@ class MainActivity : FlutterActivity() {
     
     /**
      * Check overlay permission and start CallOverlayService
-     * This is now completely optional - app works without it
+     * Does NOT automatically request permission to avoid disrupting user experience
      */
     private fun checkOverlayPermissionAndStartService() {
         try {
@@ -161,16 +161,17 @@ class MainActivity : FlutterActivity() {
                     Log.d(TAG, "✅ Overlay permission granted - starting service")
                     startCallOverlayService()
                 } else {
-                    Log.w(TAG, "⚠️ Overlay permission not granted - app will work without overlay")
-                    // Don't request permission automatically - let user enable from settings if needed
+                    Log.w(TAG, "⚠️ Overlay permission not granted - service not started")
+                    // Don't auto-request to avoid app appearing to crash
+                    // User can enable from app settings
                 }
             } else {
-                // Pre-Marshmallow: Try to start service but don't fail if it doesn't work
-                Log.d(TAG, "Pre-Marshmallow device - attempting service start")
+                // Pre-Marshmallow: overlay permission granted by default
+                Log.d(TAG, "Pre-Marshmallow device - starting service")
                 startCallOverlayService()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking overlay permission - app will continue without overlay", e)
+            Log.e(TAG, "Error checking overlay permission", e)
         }
     }
     

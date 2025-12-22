@@ -1,14 +1,17 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    // Flutter Gradle Plugin (must be after Android & Kotlin)
     id("dev.flutter.flutter-gradle-plugin")
     id("com.google.gms.google-services")
 }
 
 android {
     namespace = "com.example.sbs"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36   // Latest Android SDK
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -16,26 +19,47 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = "17"   // Warning is OK, not an error
+        jvmTarget = "17"
     }
 
     defaultConfig {
         applicationId = "com.example.sbs"
-        minSdk = flutter.minSdkVersion  // Support Android 5.0 (Lollipop) and above
-        targetSdk = 34
+        minSdk = flutter.minSdkVersion          // Android 5.0+
+        targetSdk = 36       // MUST match compileSdk
         versionCode = 1
         versionName = "1.0.0"
-        
-        // Enable multidex for Android 4.x and 5.x devices
+
+        // Required for older devices with many methods
         multiDexEnabled = true
+    }
+
+    // 🔐 Load keystore properties (for Play Store release)
+    val keystorePropertiesFile = rootProject.file("key.properties")
+    val keystoreProperties = Properties()
+    if (keystorePropertiesFile.exists()) {
+        keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+    }
+
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
     }
 
     buildTypes {
         release {
-            // TEMP debug signing (OK for local release APK)
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keystorePropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
 
-            // Disable minification to prevent crashes on other devices
+            // Keep false for now (safe for all devices)
             isMinifyEnabled = false
             isShrinkResources = false
         }
