@@ -10,6 +10,9 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import android.view.*
 import android.widget.Button
@@ -54,6 +57,9 @@ class CallOverlayService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var phoneCallDetector: PhoneCallDetector? = null
+    
+    // Wake lock to keep service alive
+    private var wakeLock: PowerManager.WakeLock? = null
 
     private val callDetectorCallback = object : PhoneCallDetector.CallStateCallback {
         override fun onIncomingCall(phoneNumber: String?) {
@@ -104,6 +110,19 @@ class CallOverlayService : Service() {
         Log.d(TAG, "Service created")
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         createNotificationChannel()
+        
+        // Acquire wake lock to prevent service from sleeping
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "SBS::CallMonitorWakeLock"
+            )
+            wakeLock?.acquire(10*60*60*1000L) // 10 hours timeout
+            Log.d(TAG, "✅ Wake lock acquired")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to acquire wake lock", e)
+        }
         
         // Use SPECIAL_USE type for Android 14+ (doesn't require DIALER role)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -166,10 +185,45 @@ class CallOverlayService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Error unregistering receiver", e)
         }
+        
+        // Release wake lock
+        try {
+            wakeLock?.release()
+            wakeLock = null
+            Log.d(TAG, "Wake lock released")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing wake lock", e)
+        }
+        
         removeFloatingIcon()
         removePopup()
         serviceScope.cancel()
         super.onDestroy()
+    }
+    
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.d(TAG, "⚠️ Task removed - scheduling service restart")
+        
+        // Schedule service restart using AlarmManager
+        try {
+            val restartServiceIntent = Intent(applicationContext, CallOverlayService::class.java)
+            val restartServicePendingIntent = PendingIntent.getService(
+                this, 
+                1, 
+                restartServiceIntent,
+                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val alarmService = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmService.set(
+                AlarmManager.ELAPSED_REALTIME,
+                SystemClock.elapsedRealtime() + 1000,
+                restartServicePendingIntent
+            )
+            Log.d(TAG, "✅ Service restart scheduled")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to schedule restart", e)
+        }
     }
 
     private fun registerCallStateReceiver() {
@@ -378,6 +432,17 @@ class CallOverlayService : Service() {
 
     private fun showFloatingIcon() {
         if (isFloatingIconVisible) return
+        
+        // Check overlay permission
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!Settings.canDrawOverlays(this)) {
+                Log.e(TAG, "❌ OVERLAY PERMISSION NOT GRANTED! Icon cannot be shown.")
+                return
+            } else {
+                Log.d(TAG, "✅ Overlay permission granted")
+            }
+        }
+        
         try {
             floatingIconView = createFloatingIconView()
             val params = WindowManager.LayoutParams(
@@ -393,9 +458,9 @@ class CallOverlayService : Service() {
             }
             windowManager?.addView(floatingIconView, params)
             isFloatingIconVisible = true
-            Log.d(TAG, "✅ Floating icon shown")
+            Log.d(TAG, "✅ Floating icon shown successfully")
         } catch (e: Exception) {
-            Log.e(TAG, "Error showing floating icon", e)
+            Log.e(TAG, "❌ Error showing floating icon: ${e.message}", e)
         }
     }
 

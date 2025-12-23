@@ -20,8 +20,6 @@ class DashboardScreen extends StatefulWidget {
 class DashboardScreenState extends State<DashboardScreen> {
   final int _currentIndex = 0;
   final TextEditingController _searchController = TextEditingController();
-
-  String _selectedCategory = 'all';
   String _searchQuery = '';
 
   @override
@@ -60,8 +58,6 @@ class DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(height: 10),
                   _buildSearchResults(recentLeads),
                 ],
-                const SizedBox(height: 20),
-                _buildCategoryTabs(),
                 const SizedBox(height: 20),
                 _buildTotalLeadsCard(recentLeads),
                 const SizedBox(height: 20),
@@ -259,7 +255,6 @@ class DashboardScreenState extends State<DashboardScreen> {
                                 color: Colors.white,
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold,
-                                
                               ),
                             ),
                           ],
@@ -445,42 +440,12 @@ class DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildCategoryTabs() {
-    return SizedBox(
-      height: 40,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          _buildCategoryChip('All', 'all'),
-          _buildCategoryChip('Jobs', 'jobs'),
-          _buildCategoryChip('Internship', 'internship'),
-          _buildCategoryChip('Paid Internship', 'paid_internship'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCategoryChip(String label, String value) {
-    final isSelected = _selectedCategory == value;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text(label),
-        selected: isSelected,
-        onSelected: (bool selected) {
-          setState(() {
-            _selectedCategory = value;
-          });
-        },
-        backgroundColor: const Color(0xFF2A2A3E),
-        selectedColor: const Color(0xFF6C5CE7),
-        side: BorderSide.none,
-        labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.grey),
-      ),
-    );
-  }
-
   Widget _buildTotalLeadsCard(List<Lead> recentLeads) {
+    final leadTrend = _calculateLeadTrend(recentLeads);
+    final maxLeadsInDay = leadTrend.isEmpty
+        ? 1.0
+        : leadTrend.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -504,12 +469,27 @@ class DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
+              const Text(
                 'Total Leads',
                 style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6C5CE7).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Last 7 Days',
+                  style: TextStyle(
+                    color: Color(0xFF6C5CE7),
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           ),
@@ -524,41 +504,148 @@ class DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 20),
           SizedBox(
-            height: 100,
+            height: 120,
             child: LineChart(
               LineChartData(
-                gridData: const FlGridData(show: false),
-                titlesData: const FlTitlesData(show: false),
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: maxLeadsInDay > 0 ? maxLeadsInDay / 3 : 1,
+                  getDrawingHorizontalLine: (value) {
+                    return FlLine(
+                      color: const Color(0xFF3A3A4E),
+                      strokeWidth: 1,
+                    );
+                  },
+                ),
+                titlesData: FlTitlesData(
+                  show: true,
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 1,
+                      getTitlesWidget: (value, meta) {
+                        const days = [
+                          'Mon',
+                          'Tue',
+                          'Wed',
+                          'Thu',
+                          'Fri',
+                          'Sat',
+                          'Sun',
+                        ];
+                        final index = value.toInt();
+                        if (index >= 0 && index < days.length) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(
+                              days[index],
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                  ),
+                  leftTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                ),
                 borderData: FlBorderData(show: false),
+                lineTouchData: LineTouchData(
+                  enabled: true,
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipColor: (touchedSpot) => const Color(0xFF6C5CE7),
+                    tooltipRoundedRadius: 8,
+                    tooltipPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    getTooltipItems: (touchedSpots) {
+                      return touchedSpots.map((spot) {
+                        const days = [
+                          'Mon',
+                          'Tue',
+                          'Wed',
+                          'Thu',
+                          'Fri',
+                          'Sat',
+                          'Sun',
+                        ];
+                        final dayName = days[spot.x.toInt() % 7];
+                        return LineTooltipItem(
+                          '$dayName\n${spot.y.toInt()} lead${spot.y.toInt() == 1 ? '' : 's'}',
+                          const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        );
+                      }).toList();
+                    },
+                  ),
+                  touchCallback:
+                      (FlTouchEvent event, LineTouchResponse? response) {
+                        // Optional: Add haptic feedback on touch
+                      },
+                  handleBuiltInTouches: true,
+                ),
+                minY: 0,
+                maxY: maxLeadsInDay > 0 ? maxLeadsInDay + 1 : 5,
                 lineBarsData: [
                   LineChartBarData(
-                    spots: _getSpots(),
+                    spots: leadTrend,
                     isCurved: true,
-                    curveSmoothness: 0.4,
+                    curveSmoothness: 0.35,
+                    preventCurveOverShooting: true,
                     gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFF6C5CE7),
-                        Color(0xFFA29BFE),
-                        Color(0xFF6C5CE7),
-                      ],
+                      colors: [Color(0xFF6C5CE7), Color(0xFFA29BFE)],
                     ),
-                    barWidth: 4,
+                    barWidth: 3,
                     isStrokeCapRound: true,
-                    dotData: const FlDotData(show: false),
+                    dotData: FlDotData(
+                      show: true,
+                      getDotPainter: (spot, percent, barData, index) {
+                        return FlDotCirclePainter(
+                          radius: 4,
+                          color: const Color(0xFF6C5CE7),
+                          strokeWidth: 2,
+                          strokeColor: Colors.white,
+                        );
+                      },
+                    ),
                     belowBarData: BarAreaData(
                       show: true,
                       gradient: LinearGradient(
                         colors: [
-                          const Color(0xFF6C5CE7).withValues(alpha: 0.2),
-                          const Color(0xFF6C5CE7).withValues(alpha: 0.0),
+                          const Color(0xFF6C5CE7).withValues(alpha: 0.3),
+                          const Color(0xFF6C5CE7).withValues(alpha: 0.05),
                         ],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                       ),
                     ),
+                    shadow: const Shadow(
+                      color: Color(0xFF6C5CE7),
+                      offset: Offset(0, 2),
+                      blurRadius: 8,
+                    ),
                   ),
                 ],
               ),
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeInOutCubic,
             ),
           ),
         ],
@@ -566,16 +653,40 @@ class DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  List<FlSpot> _getSpots() {
-    return [
-      const FlSpot(0, 3),
-      const FlSpot(1, 1),
-      const FlSpot(2, 4),
-      const FlSpot(3, 2),
-      const FlSpot(4, 5),
-      const FlSpot(5, 3),
-      const FlSpot(6, 6),
-    ];
+  List<FlSpot> _calculateLeadTrend(List<Lead> leads) {
+    final now = DateTime.now();
+
+    // Get the last 7 days starting from 6 days ago to today
+    final last7Days = List.generate(7, (i) {
+      final daysAgo = 6 - i;
+      return DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(Duration(days: daysAgo));
+    });
+
+    // Count leads for each day
+    final counts = last7Days.map((day) {
+      return leads
+          .where((lead) {
+            final leadDate = DateTime(
+              lead.createdAt.year,
+              lead.createdAt.month,
+              lead.createdAt.day,
+            );
+            return leadDate.year == day.year &&
+                leadDate.month == day.month &&
+                leadDate.day == day.day;
+          })
+          .length
+          .toDouble();
+    }).toList();
+
+    // Create FlSpot data points
+    return counts.asMap().entries.map((e) {
+      return FlSpot(e.key.toDouble(), e.value);
+    }).toList();
   }
 
   Widget _buildStatsRow({
@@ -608,11 +719,7 @@ class DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildRecentLeadsSection(List<Lead> recentLeads) {
-    var filteredLeads = _selectedCategory == 'all'
-        ? recentLeads
-        : recentLeads
-              .where((lead) => lead.category == _selectedCategory)
-              .toList();
+    var filteredLeads = recentLeads;
 
     if (_searchQuery.isNotEmpty) {
       filteredLeads = filteredLeads
