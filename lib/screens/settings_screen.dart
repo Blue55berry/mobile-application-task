@@ -154,6 +154,20 @@ class SettingsScreenState extends State<SettingsScreen> {
               ]),
 
               const SizedBox(height: 24),
+
+              // Business Operations Section
+              _buildSettingsSection('Business Operations', [
+                _buildListTile(
+                  'Quotations & Invoices',
+                  'Manage quotes and invoices for leads',
+                  Icons.receipt_long,
+                  () {
+                    Navigator.pushNamed(context, '/quotations');
+                  },
+                ),
+              ]),
+
+              const SizedBox(height: 24),
               _buildSettingsSection('Data Management', [
                 _buildListTile(
                   'Export Data',

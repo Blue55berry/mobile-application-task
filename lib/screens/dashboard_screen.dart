@@ -58,7 +58,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(height: 10),
                   _buildSearchResults(recentLeads),
                 ],
-                const SizedBox(height: 20),
+                const SizedBox(height: 20), // Spacing after header
                 _buildTotalLeadsCard(recentLeads),
                 const SizedBox(height: 20),
                 _buildStatsRow(

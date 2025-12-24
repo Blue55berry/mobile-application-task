@@ -7,6 +7,9 @@ import 'screens/task_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/lead_details_screen.dart';
+import 'screens/quotations_screen.dart';
+import 'screens/create_quotation_screen.dart';
+import 'screens/quotation_details_screen.dart';
 import 'models/lead_model.dart';
 import 'services/leads_service.dart';
 import 'services/task_service.dart';
@@ -16,6 +19,8 @@ import 'services/call_overlay_service.dart';
 import 'services/lead_broadcast_receiver.dart';
 import 'services/auth_service.dart';
 import 'services/team_service.dart';
+import 'services/quotation_service.dart';
+import 'services/invoice_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'utils/theme.dart';
@@ -33,6 +38,10 @@ Widget _getPageForRoute(String routeName) {
       return const TasksScreen();
     case '/settings':
       return const SettingsScreen();
+    case '/quotations':
+      return const QuotationsScreen();
+    case '/create_quotation':
+      return const CreateQuotationScreen();
     default:
       return const DashboardScreen();
   }
@@ -147,6 +156,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TaskService()),
         ChangeNotifierProvider(create: (_) => LabelService()),
         ChangeNotifierProvider(create: (_) => TeamService()),
+        ChangeNotifierProvider(create: (_) => QuotationService()),
+        ChangeNotifierProvider(create: (_) => InvoiceService()),
         ChangeNotifierProxyProvider<TaskService, LeadsService>(
           create: (context) => LeadsService(context.read<TaskService>()),
           update: (context, taskService, leadsService) =>
@@ -207,6 +218,66 @@ class MyApp extends StatelessWidget {
                     ? const DashboardScreen()
                     : const LoginScreen(),
                 onGenerateRoute: (settings) {
+                  // Handle routes with arguments
+                  if (settings.name == '/quotation_details') {
+                    final quotationId = settings.arguments as int;
+                    return PageRouteBuilder(
+                      settings: settings,
+                      pageBuilder: (context, animation, _) =>
+                          QuotationDetailsScreen(quotationId: quotationId),
+                      transitionDuration: const Duration(milliseconds: 300),
+                      transitionsBuilder:
+                          (context, animation, secondaryAnimation, child) {
+                            const begin = Offset(0.05, 0);
+                            const end = Offset.zero;
+                            const curve = Curves.easeInOutCubic;
+                            var slideTween = Tween(
+                              begin: begin,
+                              end: end,
+                            ).chain(CurveTween(curve: curve));
+                            var fadeTween = Tween<double>(
+                              begin: 0.0,
+                              end: 1.0,
+                            ).chain(CurveTween(curve: curve));
+                            return FadeTransition(
+                              opacity: animation.drive(fadeTween),
+                              child: SlideTransition(
+                                position: animation.drive(slideTween),
+                                child: child,
+                              ),
+                            );
+                          },
+                    );
+                  } else if (settings.name == '/create_quotation') {
+                    final quotationId = settings.arguments as int?;
+                    return PageRouteBuilder(
+                      settings: settings,
+                      pageBuilder: (context, animation, _) =>
+                          CreateQuotationScreen(quotationId: quotationId),
+                      transitionDuration: const Duration(milliseconds: 300),
+                      transitionsBuilder:
+                          (context, animation, secondaryAnimation, child) {
+                            const begin = Offset(0.05, 0);
+                            const end = Offset.zero;
+                            const curve = Curves.easeInOutCubic;
+                            var slideTween = Tween(
+                              begin: begin,
+                              end: end,
+                            ).chain(CurveTween(curve: curve));
+                            var fadeTween = Tween<double>(
+                              begin: 0.0,
+                              end: 1.0,
+                            ).chain(CurveTween(curve: curve));
+                            return FadeTransition(
+                              opacity: animation.drive(fadeTween),
+                              child: SlideTransition(
+                                position: animation.drive(slideTween),
+                                child: child,
+                              ),
+                            );
+                          },
+                    );
+                  }
                   // Custom page transitions for all routes
                   Widget page;
 
@@ -258,6 +329,7 @@ class MyApp extends StatelessWidget {
                   '/leads': (context) => const LeadsScreen(),
                   '/tasks': (context) => const TasksScreen(),
                   '/settings': (context) => const SettingsScreen(),
+                  '/quotations': (context) => const QuotationsScreen(),
                 },
               );
             },

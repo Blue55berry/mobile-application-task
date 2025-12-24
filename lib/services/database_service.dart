@@ -6,6 +6,10 @@ import '../models/lead_model.dart';
 import '../models/call_history_model.dart';
 import '../models/user_model.dart';
 import '../models/label_model.dart';
+import '../models/quotation_model.dart';
+import '../models/quotation_item_model.dart';
+import '../models/invoice_model.dart';
+import '../models/invoice_item_model.dart';
 
 class DatabaseService {
   static Database? _database;
@@ -22,7 +26,7 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), dbName);
     return await openDatabase(
       path,
-      version: 7, // Incremented for labels table
+      version: 8, // Incremented for quotation/invoice tables
       onCreate: (db, version) async {
         // Create leads table
         await db.execute('''CREATE TABLE leads(
@@ -131,6 +135,78 @@ class DatabaseService {
           'createdAt': DateTime.now().toIso8601String(),
         });
 
+        // Create quotations table
+        await db.execute('''CREATE TABLE quotations(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            leadId INTEGER NOT NULL,
+            quotationNumber TEXT UNIQUE NOT NULL,
+            createdAt TEXT NOT NULL,
+            validUntil TEXT NOT NULL,
+            status TEXT NOT NULL,
+            subtotal REAL NOT NULL,
+            taxRate REAL NOT NULL,
+            taxAmount REAL NOT NULL,
+            discountPercent REAL DEFAULT 0,
+            discountAmount REAL DEFAULT 0,
+            totalAmount REAL NOT NULL,
+            notes TEXT,
+            termsAndConditions TEXT,
+            FOREIGN KEY (leadId) REFERENCES leads (id) ON DELETE CASCADE
+          )''');
+
+        // Create quotation_items table
+        await db.execute('''CREATE TABLE quotation_items(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            quotationId INTEGER NOT NULL,
+            itemName TEXT NOT NULL,
+            description TEXT,
+            quantity REAL NOT NULL,
+            unit TEXT NOT NULL,
+            unitPrice REAL NOT NULL,
+            totalPrice REAL NOT NULL,
+            position INTEGER NOT NULL,
+            FOREIGN KEY (quotationId) REFERENCES quotations (id) ON DELETE CASCADE
+          )''');
+
+        // Create invoices table
+        await db.execute('''CREATE TABLE invoices(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            leadId INTEGER NOT NULL,
+            quotationId INTEGER,
+            invoiceNumber TEXT UNIQUE NOT NULL,
+            createdAt TEXT NOT NULL,
+            dueDate TEXT NOT NULL,
+            status TEXT NOT NULL,
+            paymentStatus TEXT NOT NULL,
+            subtotal REAL NOT NULL,
+            taxRate REAL NOT NULL,
+            taxAmount REAL NOT NULL,
+            discountPercent REAL DEFAULT 0,
+            discountAmount REAL DEFAULT 0,
+            totalAmount REAL NOT NULL,
+            paidAmount REAL DEFAULT 0,
+            balanceAmount REAL NOT NULL,
+            notes TEXT,
+            termsAndConditions TEXT,
+            paidDate TEXT,
+            FOREIGN KEY (leadId) REFERENCES leads (id) ON DELETE CASCADE,
+            FOREIGN KEY (quotationId) REFERENCES quotations (id) ON DELETE SET NULL
+          )''');
+
+        // Create invoice_items table
+        await db.execute('''CREATE TABLE invoice_items(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoiceId INTEGER NOT NULL,
+            itemName TEXT NOT NULL,
+            description TEXT,
+            quantity REAL NOT NULL,
+            unit TEXT NOT NULL,
+            unitPrice REAL NOT NULL,
+            totalPrice REAL NOT NULL,
+            position INTEGER NOT NULL,
+            FOREIGN KEY (invoiceId) REFERENCES invoices (id) ON DELETE CASCADE
+          )''');
+
         // Create index on phone number for faster lookups
         await db.execute(
           'CREATE INDEX idx_phone_number ON leads (phoneNumber)',
@@ -236,6 +312,79 @@ class DatabaseService {
             'color': '#6C5CE7',
             'createdAt': DateTime.now().toIso8601String(),
           });
+        }
+        if (oldVersion < 8) {
+          // Create quotations table
+          await db.execute('''CREATE TABLE quotations(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              leadId INTEGER NOT NULL,
+              quotationNumber TEXT UNIQUE NOT NULL,
+              createdAt TEXT NOT NULL,
+              validUntil TEXT NOT NULL,
+              status TEXT NOT NULL,
+              subtotal REAL NOT NULL,
+              taxRate REAL NOT NULL,
+              taxAmount REAL NOT NULL,
+              discountPercent REAL DEFAULT 0,
+              discountAmount REAL DEFAULT 0,
+              totalAmount REAL NOT NULL,
+              notes TEXT,
+              termsAndConditions TEXT,
+              FOREIGN KEY (leadId) REFERENCES leads (id) ON DELETE CASCADE
+            )''');
+
+          // Create quotation_items table
+          await db.execute('''CREATE TABLE quotation_items(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              quotationId INTEGER NOT NULL,
+              itemName TEXT NOT NULL,
+              description TEXT,
+              quantity REAL NOT NULL,
+              unit TEXT NOT NULL,
+              unitPrice REAL NOT NULL,
+              totalPrice REAL NOT NULL,
+              position INTEGER NOT NULL,
+              FOREIGN KEY (quotationId) REFERENCES quotations (id) ON DELETE CASCADE
+            )''');
+
+          // Create invoices table
+          await db.execute('''CREATE TABLE invoices(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              leadId INTEGER NOT NULL,
+              quotationId INTEGER,
+              invoiceNumber TEXT UNIQUE NOT NULL,
+              createdAt TEXT NOT NULL,
+              dueDate TEXT NOT NULL,
+              status TEXT NOT NULL,
+              paymentStatus TEXT NOT NULL,
+              subtotal REAL NOT NULL,
+              taxRate REAL NOT NULL,
+              taxAmount REAL NOT NULL,
+              discountPercent REAL DEFAULT 0,
+              discountAmount REAL DEFAULT 0,
+              totalAmount REAL NOT NULL,
+              paidAmount REAL DEFAULT 0,
+              balanceAmount REAL NOT NULL,
+              notes TEXT,
+              termsAndConditions TEXT,
+              paidDate TEXT,
+              FOREIGN KEY (leadId) REFERENCES leads (id) ON DELETE CASCADE,
+              FOREIGN KEY (quotationId) REFERENCES quotations (id) ON DELETE SET NULL
+            )''');
+
+          // Create invoice_items table
+          await db.execute('''CREATE TABLE invoice_items(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              invoiceId INTEGER NOT NULL,
+              itemName TEXT NOT NULL,
+              description TEXT,
+              quantity REAL NOT NULL,
+              unit TEXT NOT NULL,
+              unitPrice REAL NOT NULL,
+              totalPrice REAL NOT NULL,
+              position INTEGER NOT NULL,
+              FOREIGN KEY (invoiceId) REFERENCES invoices (id) ON DELETE CASCADE
+            )''');
         }
       },
     );
@@ -492,5 +641,211 @@ class DatabaseService {
       limit: 1,
     );
     return result.isNotEmpty;
+  }
+
+  // ============================================
+  // Quotation operations
+  // ============================================
+
+  Future<int> insertQuotation(Quotation quotation) async {
+    final db = await database;
+    return await db.insert('quotations', quotation.toMap());
+  }
+
+  Future<List<Quotation>> getQuotations() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'quotations',
+      orderBy: 'createdAt DESC',
+    );
+    return List.generate(maps.length, (i) => Quotation.fromMap(maps[i]));
+  }
+
+  Future<Quotation?> getQuotationById(int id) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'quotations',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    return Quotation.fromMap(maps.first);
+  }
+
+  Future<List<Quotation>> getQuotationsForLead(int leadId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'quotations',
+      where: 'lead Id = ?',
+      whereArgs: [leadId],
+      orderBy: 'createdAt DESC',
+    );
+    return List.generate(maps.length, (i) => Quotation.fromMap(maps[i]));
+  }
+
+  Future<int> updateQuotation(Quotation quotation) async {
+    final db = await database;
+    return await db.update(
+      'quotations',
+      quotation.toMap(),
+      where: 'id = ?',
+      whereArgs: [quotation.id],
+    );
+  }
+
+  Future<int> deleteQuotation(int id) async {
+    final db = await database;
+    return await db.delete('quotations', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // Quotation Item operations
+  Future<int> insertQuotationItem(QuotationItem item) async {
+    final db = await database;
+    return await db.insert('quotation_items', item.toMap());
+  }
+
+  Future<List<QuotationItem>> getQuotationItems(int quotationId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'quotation_items',
+      where: 'quotationId = ?',
+      whereArgs: [quotationId],
+      orderBy: 'position ASC',
+    );
+    return List.generate(maps.length, (i) => QuotationItem.fromMap(maps[i]));
+  }
+
+  Future<int> updateQuotationItem(QuotationItem item) async {
+    final db = await database;
+    return await db.update(
+      'quotation_items',
+      item.toMap(),
+      where: 'id = ?',
+      whereArgs: [item.id],
+    );
+  }
+
+  Future<int> deleteQuotationItem(int id) async {
+    final db = await database;
+    return await db.delete('quotation_items', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // ============================================
+  // Invoice operations
+  // ============================================
+
+  Future<int> insertInvoice(Invoice invoice) async {
+    final db = await database;
+    return await db.insert('invoices', invoice.toMap());
+  }
+
+  Future<List<Invoice>> getInvoices() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'invoices',
+      orderBy: 'createdAt DESC',
+    );
+    return List.generate(maps.length, (i) => Invoice.fromMap(maps[i]));
+  }
+
+  Future<Invoice?> getInvoiceById(int id) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'invoices',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    return Invoice.fromMap(maps.first);
+  }
+
+  Future<List<Invoice>> getInvoicesForLead(int leadId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'invoices',
+      where: 'leadId = ?',
+      whereArgs: [leadId],
+      orderBy: 'createdAt DESC',
+    );
+    return List.generate(maps.length, (i) => Invoice.fromMap(maps[i]));
+  }
+
+  Future<int> updateInvoice(Invoice invoice) async {
+    final db = await database;
+    return await db.update(
+      'invoices',
+      invoice.toMap(),
+      where: 'id = ?',
+      whereArgs: [invoice.id],
+    );
+  }
+
+  Future<int> deleteInvoice(int id) async {
+    final db = await database;
+    return await db.delete('invoices', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // Invoice Item operations
+  Future<int> insertInvoiceItem(InvoiceItem item) async {
+    final db = await database;
+    return await db.insert('invoice_items', item.toMap());
+  }
+
+  Future<List<InvoiceItem>> getInvoiceItems(int invoiceId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'invoice_items',
+      where: 'invoiceId = ?',
+      whereArgs: [invoiceId],
+      orderBy: 'position ASC',
+    );
+    return List.generate(maps.length, (i) => InvoiceItem.fromMap(maps[i]));
+  }
+
+  Future<int> updateInvoiceItem(InvoiceItem item) async {
+    final db = await database;
+    return await db.update(
+      'invoice_items',
+      item.toMap(),
+      where: 'id = ?',
+      whereArgs: [item.id],
+    );
+  }
+
+  Future<int> deleteInvoiceItem(int id) async {
+    final db = await database;
+    return await db.delete('invoice_items', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // Helper method to get next sequence number for quotations
+  Future<int> getNextQuotationSequence() async {
+    final db = await database;
+    final today = DateTime.now();
+    final todayString =
+        '${today.year}${today.month.toString().padLeft(2, '0')}${today.day.toString().padLeft(2, '0')}';
+
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM quotations WHERE quotationNumber LIKE ?',
+      ['QT-$todayString%'],
+    );
+
+    return (Sqflite.firstIntValue(result) ?? 0) + 1;
+  }
+
+  // Helper method to get next sequence number for invoices
+  Future<int> getNextInvoiceSequence() async {
+    final db = await database;
+    final today = DateTime.now();
+    final todayString =
+        '${today.year}${today.month.toString().padLeft(2, '0')}${today.day.toString().padLeft(2, '0')}';
+
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM invoices WHERE invoiceNumber LIKE ?',
+      ['INV-$todayString%'],
+    );
+
+    return (Sqflite.firstIntValue(result) ?? 0) + 1;
   }
 }
