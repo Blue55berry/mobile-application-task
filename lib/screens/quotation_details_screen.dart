@@ -5,8 +5,10 @@ import '../models/quotation_item_model.dart';
 import '../models/lead_model.dart';
 import '../services/quotation_service.dart';
 import '../services/leads_service.dart';
+import '../services/invoice_service.dart';
 import '../services/pdf_service.dart';
 import 'pdf_preview_screen.dart';
+import 'invoice_details_screen.dart';
 import 'package:intl/intl.dart';
 
 class QuotationDetailsScreen extends StatefulWidget {
@@ -201,19 +203,16 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
       // Close loading
       if (mounted) Navigator.pop(context);
 
-      // Share PDF
-      await PdfService.saveAndSharePDF(
-        pdf: pdf,
-        fileName: _quotation!.quotationNumber,
-      );
-
-      // Show success message
+      // Navigate to PDF preview screen
+      // Users can view the PDF and then share from there
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('PDF generated and shared successfully!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PdfPreviewScreen(
+              pdf: pdf,
+              fileName: _quotation!.quotationNumber,
+            ),
           ),
         );
       }
@@ -290,6 +289,88 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
     ).then((_) => _loadQuotationDetails());
   }
 
+  Future<void> _convertToInvoice() async {
+    if (_quotation == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF16213E),
+        title: const Text(
+          'Convert to Invoice',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          'Convert quotation ${_quotation!.quotationNumber} to an invoice?\n\nThis will create a new invoice with all items from this quotation.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            child: const Text('Convert'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(color: Color(0xFF6C5CE7)),
+        ),
+      );
+
+      final invoiceService = Provider.of<InvoiceService>(
+        context,
+        listen: false,
+      );
+      final invoiceId = await invoiceService.convertQuotationToInvoice(
+        quotation: _quotation!,
+        items: _items,
+      );
+
+      if (mounted) Navigator.pop(context);
+
+      if (invoiceId != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Successfully converted to invoice'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => InvoiceDetailsScreen(invoiceId: invoiceId),
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to convert to invoice'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -317,6 +398,8 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
                   _previewPDF();
                 } else if (value == 'share') {
                   _sharePDF();
+                } else if (value == 'convert') {
+                  _convertToInvoice();
                 }
               },
               itemBuilder: (context) => [
@@ -337,6 +420,19 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
                       Icon(Icons.share, size: 20),
                       SizedBox(width: 8),
                       Text('Share PDF'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'convert',
+                  child: Row(
+                    children: [
+                      Icon(Icons.receipt_long, size: 20, color: Colors.green),
+                      SizedBox(width: 8),
+                      Text(
+                        'Convert to Invoice',
+                        style: TextStyle(color: Colors.green),
+                      ),
                     ],
                   ),
                 ),

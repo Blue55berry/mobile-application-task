@@ -9,7 +9,15 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <!-- New permissions for native call detection -->
     <uses-permission android:name="android.permission.READ_CALL_LOG"/>
+    <uses-permission android:name="android.permission.READ_CONTACTS"/> <!-- Read phone contacts -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/> <!-- Android 13+ -->
+    <!-- Battery optimization exemption - for keeping app running in background -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+    <!-- Call screening role permissions -->
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS"/>
+    <!-- Lock screen overlay permissions -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD"/>
     
     <application
         android:label="sbs"
@@ -55,25 +63,47 @@
                 android:value="call_overlay_for_crm" />
         </service>
             
-        <!-- Static BroadcastReceiver for incoming calls (works on all Android versions) -->
+        <!-- Static BroadcastReceiver for incoming calls - MAXIMUM PRIORITY -->
         <receiver
             android:name=".IncomingCallReceiver"
             android:enabled="true"
             android:exported="true">
-            <intent-filter android:priority="999">
+            <intent-filter android:priority="2147483647">
                 <action android:name="android.intent.action.PHONE_STATE" />
             </intent-filter>
         </receiver>
         
-        <!-- Receiver for outgoing calls -->
+        <!-- Receiver for outgoing calls - MAXIMUM PRIORITY -->
         <receiver
             android:name=".OutgoingCallReceiver"
             android:enabled="true"
             android:exported="true">
-            <intent-filter android:priority="999">
+            <intent-filter android:priority="2147483647">
                 <action android:name="android.intent.action.NEW_OUTGOING_CALL" />
             </intent-filter>
         </receiver>
+        
+        <!-- CallScreeningService - REQUIRED for default Caller ID role on Android 10+ -->
+        <service 
+            android:name=".SBSCallScreeningService"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.BIND_SCREENING_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService"/>
+            </intent-filter>
+        </service>
+            
+        <!-- FileProvider for sharing files with other apps -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
             
     </application>
     <!-- Required to query activities that can process text, see:

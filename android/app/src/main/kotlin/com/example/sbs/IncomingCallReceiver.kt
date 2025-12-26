@@ -29,20 +29,19 @@ class IncomingCallReceiver : BroadcastReceiver() {
         
         when (state) {
             TelephonyManager.EXTRA_STATE_RINGING -> {
-                if (phoneNumber != null && phoneNumber.isNotEmpty()) {
-                    Log.d(TAG, "📞 INCOMING CALL from: $phoneNumber")
-                    
-                    // Start the overlay service with the phone number
-                    val serviceIntent = Intent(context, CallOverlayService::class.java).apply {
-                        action = "com.example.sbs.INCOMING_CALL"
-                        putExtra("phone_number", phoneNumber)
-                    }
-                    
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        context.startForegroundService(serviceIntent)
-                    } else {
-                        context.startService(serviceIntent)
-                    }
+                // IMMEDIATELY start service to show popup - DON'T WAIT for phone number!
+                Log.d(TAG, "📞 PHONE RINGING - showing popup IMMEDIATELY!")
+                
+                val serviceIntent = Intent(context, CallOverlayService::class.java).apply {
+                    action = "com.example.sbs.INCOMING_CALL"
+                    // Pass phone number if available, otherwise "Unknown"
+                    putExtra("phone_number", phoneNumber ?: "Unknown")
+                }
+                
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(serviceIntent)
+                } else {
+                    context.startService(serviceIntent)
                 }
             }
             
@@ -50,6 +49,7 @@ class IncomingCallReceiver : BroadcastReceiver() {
                 Log.d(TAG, "📞 Call answered/started")
                 val serviceIntent = Intent(context, CallOverlayService::class.java).apply {
                     action = "com.example.sbs.CALL_STARTED"
+                    if (phoneNumber != null) putExtra("phone_number", phoneNumber)
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(serviceIntent)

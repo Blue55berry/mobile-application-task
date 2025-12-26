@@ -11,10 +11,16 @@ import 'database_service.dart';
 /// Authentication service for Google Sign-In
 /// Manages user authentication state and profile data
 class AuthService extends ChangeNotifier {
-  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: [
+      'email',
+      'profile',
+      'https://www.googleapis.com/auth/contacts.readonly',
+    ],
+  );
 
   // Use getters with safety checks to avoid early/missing initialization issues
-Future<void> _ensureFirebaseInitialized() async {
+  Future<void> _ensureFirebaseInitialized() async {
     if (Firebase.apps.isEmpty) {
       debugPrint(
         '🔄 Firebase not initialized. Attempting auto-initialization...',
@@ -62,6 +68,7 @@ Future<void> _ensureFirebaseInitialized() async {
   bool get isSignedIn => _currentUser != null;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  GoogleSignIn get googleSignIn => _googleSignIn; // For GoogleContactsService
 
   /// Initialize service and restore session
   Future<void> initialize() async {
@@ -137,7 +144,13 @@ Future<void> _ensureFirebaseInitialized() async {
       final User? firebaseUser = userCredential.user;
 
       if (firebaseUser == null) {
-        throw Exception('Firebase login failed');
+        // Clean up Google sign-in if Firebase fails
+        await _googleSignIn.signOut();
+        throw FirebaseAuthException(
+          code: 'firebase-user-null',
+          message:
+              'Firebase user creation failed after successful Google authentication.',
+        );
       }
 
       // Create user from Firebase account data
@@ -164,19 +177,40 @@ Future<void> _ensureFirebaseInitialized() async {
       debugPrint('❌ Google Sign-In error details: $error');
 
       if (error is FirebaseAuthException) {
-        if (error.code == 'operation-not-allowed') {
-          _errorMessage =
-              'Google Sign-In is not enabled in Firebase Console. Please enable it in Authentication > Sign-in method.';
-        } else {
-          _errorMessage = 'Firebase Auth Error: ${error.message}';
-        }
+        _errorMessage = _getAuthErrorMessage(error.code);
+      } else if (error.toString().contains('sign_in_failed')) {
+        _errorMessage =
+            'Google Sign-In was cancelled or failed to initialize. Please check your internet connection.';
       } else {
-        _errorMessage = 'Failed to sign in with Google. Please try again.';
+        _errorMessage =
+            'An unexpected error occurred during sign-in: ${error.toString()}';
       }
+
+      // Cleanup on failure
+      _currentUser = null;
+      await _googleSignIn.signOut();
 
       _isLoading = false;
       notifyListeners();
       return false;
+    }
+  }
+
+  /// Helper to map Firebase error codes to user-friendly messages
+  String _getAuthErrorMessage(String code) {
+    switch (code) {
+      case 'operation-not-allowed':
+        return 'Google Sign-In is not enabled in Firebase Console.';
+      case 'user-disabled':
+        return 'This user account has been disabled.';
+      case 'network-request-failed':
+        return 'Network error. Please check your connection.';
+      case 'firebase-user-null':
+        return 'Failed to synchronize with Firebase. Please try again.';
+      case 'account-exists-with-different-credential':
+        return 'An account already exists with the same email but different sign-in credentials.';
+      default:
+        return 'Authentication failed ($code). Please try again.';
     }
   }
 
@@ -313,6 +347,14 @@ Future<void> _ensureFirebaseInitialized() async {
       // Save to SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('current_user', jsonEncode(user.toJson()));
+
+      // Save photo URL separately for easy access
+      if (user.photoUrl != null) {
+        await prefs.setString('user_photo_url', user.photoUrl!);
+        await prefs.setString('user_display_name', user.displayName);
+        await prefs.setString('user_email', user.email);
+        debugPrint('📸 User photo saved: ${user.photoUrl}');
+      }
 
       debugPrint('💾 User saved to local storage');
     } catch (e) {

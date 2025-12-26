@@ -176,10 +176,12 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
       return;
     }
 
-    if (_items.isEmpty || _items.every((item) => item.itemName.isEmpty)) {
+    // Check if there's at least one valid item with a non-empty name
+    if (_items.isEmpty ||
+        !_items.any((item) => item.itemName.trim().isNotEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please add at least one item'),
+          content: Text('Please add at least one item with a name'),
           backgroundColor: Colors.red,
         ),
       );

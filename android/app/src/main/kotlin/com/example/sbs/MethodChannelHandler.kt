@@ -256,6 +256,19 @@ class MethodChannelHandler(
     }
     
     /**
+     * Request Flutter to save a contact to the database
+     */
+    fun notifySaveContact(name: String, phone: String, category: String) {
+        methodChannel.invokeMethod("saveContact", mapOf(
+            "name" to name,
+            "phone" to phone,
+            "category" to category,
+            "timestamp" to System.currentTimeMillis()
+        ))
+        Log.d(TAG, "Notified Flutter: saveContact ($name, $phone)")
+    }
+    
+    /**
      * Send call ended event to Flutter
      */
     fun notifyCallEnded(duration: Long) {

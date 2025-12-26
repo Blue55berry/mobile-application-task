@@ -27,19 +27,12 @@ class _LoginScreenState extends State<LoginScreen> {
         // Navigate to dashboard
         Navigator.pushReplacementNamed(context, '/dashboard');
       } else {
-        // Show error
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(authService.errorMessage ?? 'Failed to sign in'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        // Show error dialog for better visibility
+        _showErrorDialog(authService.errorMessage ?? 'Failed to sign in');
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
+      _showErrorDialog(e.toString());
     } finally {
       if (mounted) {
         setState(() {
@@ -47,6 +40,27 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
     }
+  }
+
+  void _showErrorDialog(String message) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A3E),
+        title: const Text(
+          'Sign In Failed',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(message, style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK', style: TextStyle(color: Color(0xFF6C5CE7))),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

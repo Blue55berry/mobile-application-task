@@ -8,6 +8,7 @@ class DashboardCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   final bool showChart;
+  final List<FlSpot>? chartData; // Real data for chart
 
   const DashboardCard({
     super.key,
@@ -17,6 +18,7 @@ class DashboardCard extends StatelessWidget {
     required this.icon,
     required this.color,
     this.showChart = false,
+    this.chartData, // Optional chart data
   });
 
   @override
@@ -70,17 +72,28 @@ class DashboardCard extends StatelessWidget {
                   gridData: const FlGridData(show: false),
                   titlesData: const FlTitlesData(show: false),
                   borderData: FlBorderData(show: false),
+                  minY: 0,
                   lineBarsData: [
                     LineChartBarData(
-                      spots: _generateRandomSpots(),
+                      spots: chartData ?? _generateDefaultSpots(),
                       isCurved: true,
-                      curveSmoothness: 0.4,
+                      curveSmoothness: 0.35,
                       gradient: LinearGradient(
-                        colors: [color.withValues(alpha: 0.4), color],
+                        colors: [color.withValues(alpha: 0.5), color],
                       ),
-                      barWidth: 3,
+                      barWidth: 2.5,
                       isStrokeCapRound: true,
-                      dotData: const FlDotData(show: false),
+                      dotData: FlDotData(
+                        show: true,
+                        getDotPainter: (spot, percent, barData, index) {
+                          return FlDotCirclePainter(
+                            radius: 3,
+                            color: color,
+                            strokeWidth: 1.5,
+                            strokeColor: Colors.white,
+                          );
+                        },
+                      ),
                       belowBarData: BarAreaData(
                         show: true,
                         gradient: LinearGradient(
@@ -103,10 +116,10 @@ class DashboardCard extends StatelessWidget {
     );
   }
 
-  List<FlSpot> _generateRandomSpots() {
+  List<FlSpot> _generateDefaultSpots() {
     return List.generate(
       7,
-      (index) => FlSpot(index.toDouble(), index % 2 == 0 ? 2 : 4),
+      (index) => FlSpot(index.toDouble(), index % 2 == 0 ? 2 : 3),
     );
   }
 }

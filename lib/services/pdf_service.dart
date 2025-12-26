@@ -16,7 +16,14 @@ class PdfService {
     required List<QuotationItem> items,
     required Lead lead,
   }) async {
-    final pdf = pw.Document();
+    final pdf = pw.Document(
+      title: 'Quotation ${quotation.quotationNumber}',
+      author: 'SBS CRM',
+      creator: 'SBS Business Management System',
+      subject: 'Quotation for ${lead.name}',
+      keywords: 'quotation, invoice, business',
+      producer: 'Flutter PDF',
+    );
 
     pdf.addPage(
       pw.MultiPage(
@@ -62,9 +69,8 @@ class PdfService {
           children: [
             pw.Text(
               'SBS',
-              style: pw.TextStyle(
+              style: const pw.TextStyle(
                 fontSize: 32,
-                fontWeight: pw.FontWeight.bold,
                 color: PdfColors.deepPurple,
               ),
             ),
@@ -77,10 +83,7 @@ class PdfService {
         pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.end,
           children: [
-            pw.Text(
-              'QUOTATION',
-              style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
-            ),
+            pw.Text('QUOTATION', style: const pw.TextStyle(fontSize: 24)),
           ],
         ),
       ],
@@ -105,7 +108,7 @@ class PdfService {
             children: [
               pw.Text(
                 'Quotation #: ${quotation.quotationNumber}',
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                style: const pw.TextStyle(fontSize: 11),
               ),
               pw.SizedBox(height: 4),
               pw.Text(
@@ -119,7 +122,7 @@ class PdfService {
             children: [
               pw.Text(
                 'Valid Until: ${dateFormat.format(quotation.validUntil)}',
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                style: const pw.TextStyle(fontSize: 11),
               ),
               pw.SizedBox(height: 4),
               pw.Container(
@@ -157,15 +160,9 @@ class PdfService {
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          pw.Text(
-            'Bill To:',
-            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12),
-          ),
+          pw.Text('Bill To:', style: const pw.TextStyle(fontSize: 12)),
           pw.SizedBox(height: 8),
-          pw.Text(
-            lead.name,
-            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-          ),
+          pw.Text(lead.name, style: const pw.TextStyle(fontSize: 11)),
           if (lead.phoneNumber != null)
             pw.Text(
               'Phone: ${lead.phoneNumber}',
@@ -215,11 +212,11 @@ class PdfService {
               _buildTableCell(item.quantity.toString(), isHeader: false),
               _buildTableCell(item.unit, isHeader: false),
               _buildTableCell(
-                '₹${item.unitPrice.toStringAsFixed(2)}',
+                'Rs. ${item.unitPrice.toStringAsFixed(2)}',
                 isHeader: false,
               ),
               _buildTableCell(
-                '₹${item.totalPrice.toStringAsFixed(2)}',
+                'Rs. ${item.totalPrice.toStringAsFixed(2)}',
                 isHeader: false,
               ),
             ],
@@ -288,19 +285,10 @@ class PdfService {
     return pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
       children: [
-        pw.Text(
-          label,
-          style: pw.TextStyle(
-            fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
-            fontSize: isBold ? 12 : 10,
-          ),
-        ),
+        pw.Text(label, style: pw.TextStyle(fontSize: isBold ? 12 : 10)),
         pw.Text(
           'Rs. ${amount.toStringAsFixed(2)}',
-          style: pw.TextStyle(
-            fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
-            fontSize: isBold ? 12 : 10,
-          ),
+          style: pw.TextStyle(fontSize: isBold ? 12 : 10),
         ),
       ],
     );
@@ -394,25 +382,28 @@ class PdfService {
     required String fileName,
   }) async {
     try {
-      // Get the appropriate directory for sharing
-      // Use external storage on Android for better sharing compatibility with WhatsApp, etc.
-      Directory output;
+      // Get the app documents directory for sharing
+      // This is accessible via FileProvider for cross-app sharing
+      Directory? output;
       if (Platform.isAndroid) {
-        // External storage directory is accessible by other apps
-        final externalDir = await getExternalStorageDirectory();
-        output = externalDir ?? await getTemporaryDirectory();
-        debugPrint('📂 Using directory: ${output.path}');
+        output = await getApplicationDocumentsDirectory();
+        debugPrint('📂 Using app documents: ${output.path}');
       } else {
         output = await getTemporaryDirectory();
       }
 
       final file = File('${output.path}/$fileName.pdf');
 
-      // Write PDF to file
+      // Write PDF to file with explicit flush
       final bytes = await pdf.save();
-      await file.writeAsBytes(bytes);
+      debugPrint('📄 Generated PDF: ${bytes.length} bytes');
+
+      final randomAccessFile = await file.open(mode: FileMode.write);
+      await randomAccessFile.writeFrom(bytes);
+      await randomAccessFile.flush();
+      await randomAccessFile.close();
+
       debugPrint('✅ PDF saved to: ${file.path}');
-      debugPrint('📊 PDF size: ${bytes.length} bytes');
 
       // Verify file exists and is readable
       if (!await file.exists()) {

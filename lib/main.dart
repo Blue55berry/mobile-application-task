@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/leads_screen.dart';
 import 'screens/task_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/onboarding_screen.dart';
+import 'screens/enhanced_onboarding_screen.dart';
 import 'screens/lead_details_screen.dart';
 import 'screens/quotations_screen.dart';
 import 'screens/create_quotation_screen.dart';
 import 'screens/quotation_details_screen.dart';
+import 'screens/invoices_screen.dart';
+import 'screens/create_invoice_screen.dart';
+import 'screens/business_menu_screen.dart';
 import 'models/lead_model.dart';
 import 'services/leads_service.dart';
 import 'services/task_service.dart';
@@ -21,15 +27,26 @@ import 'services/auth_service.dart';
 import 'services/team_service.dart';
 import 'services/quotation_service.dart';
 import 'services/invoice_service.dart';
+import 'services/google_contacts_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'utils/theme.dart';
+
+// Check if onboarding is complete
+Future<bool> _checkOnboardingComplete() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getBool('onboarding_complete') ?? false;
+}
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 // Helper function to get page widget from route name
 Widget _getPageForRoute(String routeName) {
   switch (routeName) {
+    case '/onboarding':
+      return const OnboardingScreen();
+    case '/login':
+      return const LoginScreen();
     case '/dashboard':
       return const DashboardScreen();
     case '/leads':
@@ -42,6 +59,14 @@ Widget _getPageForRoute(String routeName) {
       return const QuotationsScreen();
     case '/create_quotation':
       return const CreateQuotationScreen();
+    case '/invoices':
+      return const InvoicesScreen();
+    case '/create_invoice':
+      return const CreateInvoiceScreen();
+    case '/business_menu':
+      return const BusinessMenuScreen();
+    case '/enhanced_onboarding':
+      return const EnhancedOnboardingScreen();
     default:
       return const DashboardScreen();
   }
@@ -93,6 +118,18 @@ void _setupNativeCallListener() {
     debugPrint('📱 Main app received method call: ${call.method}');
 
     switch (call.method) {
+      case 'getContactPhoto':
+        // Android requesting photo path for phone number
+        final phoneNumber = call.arguments as String?;
+        if (phoneNumber != null) {
+          // This will be called from Android overlay service
+          // Return cached photo path if available
+          debugPrint('📸 Android requesting photo for: $phoneNumber');
+          // Will be handled after app is built
+          return null; // Placeholder for now
+        }
+        return null;
+
       case 'onIncomingCall':
         debugPrint('📞 Native incoming call event');
         // Events are now handled by overlay service
@@ -158,6 +195,13 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TeamService()),
         ChangeNotifierProvider(create: (_) => QuotationService()),
         ChangeNotifierProvider(create: (_) => InvoiceService()),
+        ChangeNotifierProxyProvider<AuthService, GoogleContactsService>(
+          create: (context) =>
+              GoogleContactsService(context.read<AuthService>().googleSignIn),
+          update: (context, authService, contactsService) =>
+              contactsService ??
+              GoogleContactsService(authService.googleSignIn),
+        ),
         ChangeNotifierProxyProvider<TaskService, LeadsService>(
           create: (context) => LeadsService(context.read<TaskService>()),
           update: (context, taskService, leadsService) =>
@@ -187,7 +231,20 @@ class MyApp extends StatelessWidget {
 
               // Initialize AuthService to restore user session
               final authService = context.read<AuthService>();
-              authService.initialize();
+              authService.initialize().then((_) {
+                // Initialize Google Contacts after auth (with mounted check)
+                if (authService.isSignedIn &&
+                    navigatorKey.currentContext != null) {
+                  try {
+                    final contactsService = navigatorKey.currentContext!
+                        .read<GoogleContactsService>();
+                    contactsService.initialize();
+                    debugPrint('📸 Google Contacts service initialized');
+                  } catch (e) {
+                    debugPrint('⚠️ Could not initialize contacts service: $e');
+                  }
+                }
+              });
 
               // Initialize TeamService
               final teamService = context.read<TeamService>();
@@ -204,19 +261,32 @@ class MyApp extends StatelessWidget {
                 darkTheme: AppTheme.darkTheme,
                 themeMode: ThemeMode.system,
                 debugShowCheckedModeBanner: false,
-                // Show login screen if not signed in, otherwise dashboard
-                home: authService.isLoading
-                    ? const Scaffold(
+                // Show onboarding if first launch, login if not signed in, otherwise dashboard
+                home: FutureBuilder<bool>(
+                  future: _checkOnboardingComplete(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting ||
+                        authService.isLoading) {
+                      return const Scaffold(
                         backgroundColor: Color(0xFF1A1A2E),
                         body: Center(
                           child: CircularProgressIndicator(
                             color: Color(0xFF6C5CE7),
                           ),
                         ),
-                      )
-                    : authService.isSignedIn
-                    ? const DashboardScreen()
-                    : const LoginScreen(),
+                      );
+                    }
+
+                    final onboardingComplete = snapshot.data ?? false;
+                    if (!onboardingComplete) {
+                      return const OnboardingScreen();
+                    }
+
+                    return authService.isSignedIn
+                        ? const DashboardScreen()
+                        : const LoginScreen();
+                  },
+                ),
                 onGenerateRoute: (settings) {
                   // Handle routes with arguments
                   if (settings.name == '/quotation_details') {

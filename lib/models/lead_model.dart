@@ -12,6 +12,7 @@ class Lead {
   final DateTime? assignedDate;
   final String? assignedTime;
   final bool isVip;
+  final String source; // 'crm' or 'phone'
 
   Lead({
     this.id,
@@ -27,6 +28,7 @@ class Lead {
     this.assignedDate,
     this.assignedTime,
     this.isVip = false,
+    this.source = 'crm', // Default to CRM
   });
 
   Map<String, dynamic> toMap() {
@@ -44,6 +46,7 @@ class Lead {
       'assignedDate': assignedDate?.toIso8601String(),
       'assignedTime': assignedTime,
       'isVip': isVip ? 1 : 0,
+      'source': source,
     };
   }
 
@@ -66,6 +69,7 @@ class Lead {
           : null,
       assignedTime: map['assignedTime'],
       isVip: map['isVip'] == 1,
+      source: map['source'] ?? 'crm',
     );
   }
 

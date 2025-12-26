@@ -10,6 +10,7 @@ import '../models/quotation_model.dart';
 import '../models/quotation_item_model.dart';
 import '../models/invoice_model.dart';
 import '../models/invoice_item_model.dart';
+import '../models/communication_model.dart';
 
 class DatabaseService {
   static Database? _database;
@@ -26,7 +27,7 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), dbName);
     return await openDatabase(
       path,
-      version: 8, // Incremented for quotation/invoice tables
+      version: 11, // Incremented for communications table
       onCreate: (db, version) async {
         // Create leads table
         await db.execute('''CREATE TABLE leads(
@@ -42,7 +43,8 @@ class DatabaseService {
             totalCalls INTEGER DEFAULT 0,
             assignedDate TEXT,
             assignedTime TEXT,
-            isVip INTEGER DEFAULT 0
+            isVip INTEGER DEFAULT 0,
+            source TEXT DEFAULT 'crm'
           )''');
 
         // Create call history table
@@ -204,6 +206,18 @@ class DatabaseService {
             unitPrice REAL NOT NULL,
             totalPrice REAL NOT NULL,
             position INTEGER NOT NULL,
+            FOREIGN KEY (invoiceId) REFERENCES invoices (id) ON DELETE CASCADE
+          )''');
+
+        // Create payments table for tracking invoice payments
+        await db.execute('''CREATE TABLE payments(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoiceId INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            paymentDate TEXT NOT NULL,
+            paymentMethod TEXT NOT NULL,
+            referenceNumber TEXT,
+            notes TEXT,
             FOREIGN KEY (invoiceId) REFERENCES invoices (id) ON DELETE CASCADE
           )''');
 
@@ -384,6 +398,42 @@ class DatabaseService {
               totalPrice REAL NOT NULL,
               position INTEGER NOT NULL,
               FOREIGN KEY (invoiceId) REFERENCES invoices (id) ON DELETE CASCADE
+            )''');
+        }
+        if (oldVersion < 9) {
+          // Create payments table for tracking invoice payments
+          await db.execute('''CREATE TABLE payments(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              invoiceId INTEGER NOT NULL,
+              amount REAL NOT NULL,
+              paymentDate TEXT NOT NULL,
+              paymentMethod TEXT NOT NULL,
+              referenceNumber TEXT,
+              notes TEXT,
+              FOREIGN KEY (invoiceId) REFERENCES invoices (id) ON DELETE CASCADE
+            )''');
+        }
+        if (oldVersion < 10) {
+          // Add source column to leads table
+          await db.execute(
+            "ALTER TABLE leads ADD COLUMN source TEXT DEFAULT 'crm'",
+          );
+        }
+        if (oldVersion < 11) {
+          // Add communications table
+          await db.execute('''CREATE TABLE IF NOT EXISTS communications(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              leadId INTEGER NOT NULL,
+              type TEXT NOT NULL,
+              direction TEXT NOT NULL,
+              subject TEXT,
+              body TEXT,
+              phoneNumber TEXT,
+              emailAddress TEXT,
+              timestamp INTEGER NOT NULL,
+              status TEXT NOT NULL,
+              metadata TEXT,
+              FOREIGN KEY (leadId) REFERENCES leads (id) ON DELETE CASCADE
             )''');
         }
       },
@@ -847,5 +897,78 @@ class DatabaseService {
     );
 
     return (Sqflite.firstIntValue(result) ?? 0) + 1;
+  }
+
+  // Communication operations
+  Future<int> insertCommunication(Communication communication) async {
+    final db = await database;
+    return await db.insert('communications', communication.toMap());
+  }
+
+  Future<List<Communication>> getCommunicationsForLead(int leadId) async {
+    final db = await database;
+    final maps = await db.query(
+      'communications',
+      where: 'leadId = ?',
+      whereArgs: [leadId],
+      orderBy: 'timestamp DESC',
+    );
+    return List.generate(maps.length, (i) => Communication.fromMap(maps[i]));
+  }
+
+  Future<List<Communication>> getAllCommunications({
+    String? type,
+    DateTime? since,
+  }) async {
+    final db = await database;
+    String? whereClause;
+    List<dynamic>? whereArgs;
+
+    if (type != null && since != null) {
+      whereClause = 'type = ? AND timestamp >= ?';
+      whereArgs = [type, since.millisecondsSinceEpoch];
+    } else if (type != null) {
+      whereClause = 'type = ?';
+      whereArgs = [type];
+    } else if (since != null) {
+      whereClause = 'timestamp >= ?';
+      whereArgs = [since.millisecondsSinceEpoch];
+    }
+
+    final maps = await db.query(
+      'communications',
+      where: whereClause,
+      whereArgs: whereArgs,
+      orderBy: 'timestamp DESC',
+    );
+    return List.generate(maps.length, (i) => Communication.fromMap(maps[i]));
+  }
+
+  Future<int> updateCommunicationStatus(int id, String status) async {
+    final db = await database;
+    return await db.update(
+      'communications',
+      {'status': status},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<int> deleteCommunication(int id) async {
+    final db = await database;
+    return await db.delete('communications', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // Get recent communications count for dashboard
+  Future<int> getRecentCommunicationsCount({Duration? since}) async {
+    final db = await database;
+    final sinceTime = since ?? const Duration(days: 7);
+    final timestamp = DateTime.now().subtract(sinceTime).millisecondsSinceEpoch;
+
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) FROM communications WHERE timestamp >= ?',
+      [timestamp],
+    );
+    return Sqflite.firstIntValue(result) ?? 0;
   }
 }

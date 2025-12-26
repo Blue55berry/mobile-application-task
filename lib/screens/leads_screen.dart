@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/lead_model.dart';
 import '../services/leads_service.dart';
 import '../services/label_service.dart';
@@ -12,9 +14,23 @@ class LeadsScreen extends StatefulWidget {
   LeadsScreenState createState() => LeadsScreenState();
 }
 
-class LeadsScreenState extends State<LeadsScreen> {
+class LeadsScreenState extends State<LeadsScreen>
+    with SingleTickerProviderStateMixin {
   String _selectedFilter = 'all';
   final int _currentIndex = 1;
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,12 +57,33 @@ class LeadsScreenState extends State<LeadsScreen> {
           ),
         ],
       ),
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          SliverToBoxAdapter(child: _buildFilterChips()),
-          SliverToBoxAdapter(child: _buildLeadStats(filteredLeads)),
-          _buildLeadsList(filteredLeads),
+      body: Column(
+        children: [
+          // Tab Bar
+          Container(
+            color: const Color(0xFF1A1A2E),
+            child: TabBar(
+              controller: _tabController,
+              labelColor: const Color(0xFF6C5CE7),
+              unselectedLabelColor: Colors.grey,
+              indicatorColor: const Color(0xFF6C5CE7),
+              indicatorWeight: 3,
+              tabs: const [
+                Tab(text: 'Leader'),
+                Tab(text: 'All Contacts'),
+              ],
+            ),
+          ),
+          // Expanded TabBarView
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildLeaderTabContent(leads),
+                _buildAllContactsTabContent(leads),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: CustomBottomNavBar(
@@ -58,6 +95,149 @@ class LeadsScreenState extends State<LeadsScreen> {
         },
       ),
     );
+  }
+
+  // Leader Tab - CRM contacts only (manually added)
+  Widget _buildLeaderTabContent(List<Lead> leads) {
+    // Filter for CRM contacts only (exclude phone imports)
+    final leaderContacts = leads.where((lead) => lead.source == 'crm').toList();
+    var filteredLeads = leaderContacts;
+
+    if (_selectedFilter != 'all') {
+      filteredLeads = filteredLeads
+          .where((lead) => lead.category == _selectedFilter)
+          .toList();
+    }
+
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(),
+      slivers: [
+        SliverToBoxAdapter(child: _buildFilterChips()),
+        SliverToBoxAdapter(child: _buildLeadStats(filteredLeads)),
+        _buildLeadsList(filteredLeads),
+      ],
+    );
+  }
+
+  // All Contacts Tab - Show local phone contacts directly
+  Widget _buildAllContactsTabContent(List<Lead> leads) {
+    return FutureBuilder<List<Contact>>(
+      future: _getLocalPhoneContacts(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Color(0xFF6C5CE7)),
+          );
+        }
+
+        final contacts = snapshot.data ?? [];
+
+        return CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Container(
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2A2A3E),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.contacts, color: Color(0xFF6C5CE7)),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${contacts.length} Phone Contacts',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: contacts.isEmpty
+                  ? const SliverFillRemaining(
+                      child: Center(
+                        child: Text(
+                          'No contacts found',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    )
+                  : SliverList(
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final contact = contacts[index];
+                        final phone = contact.phones.isNotEmpty
+                            ? contact.phones.first.number
+                            : '';
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A2A3E),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: const Color(0xFF6C5CE7),
+                                child: Text(
+                                  contact.displayName.isNotEmpty
+                                      ? contact.displayName[0].toUpperCase()
+                                      : '?',
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      contact.displayName,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    Text(
+                                      phone,
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }, childCount: contacts.length),
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<List<Contact>> _getLocalPhoneContacts() async {
+    if (await Permission.contacts.isGranted) {
+      return await FlutterContacts.getContacts(withProperties: true);
+    }
+    await Permission.contacts.request();
+    if (await Permission.contacts.isGranted) {
+      return await FlutterContacts.getContacts(withProperties: true);
+    }
+    return [];
   }
 
   Widget _buildFilterChips() {
@@ -210,10 +390,23 @@ class LeadsScreenState extends State<LeadsScreen> {
   void _showAddLeadDialog() {
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
-    String selectedCategory =
-        Provider.of<LabelService>(context, listen: false).labels.isNotEmpty
-        ? Provider.of<LabelService>(context, listen: false).labels.first.name
-        : 'Client';
+    final labelService = Provider.of<LabelService>(context, listen: false);
+
+    // Check if labels exist
+    if (labelService.labels.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please create at least one category/label in Settings first',
+          ),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    String selectedCategory = labelService.labels.first.name;
     String selectedStatus = 'New';
     DateTime? assignedDate = DateTime.now();
     TimeOfDay? assignedTime = TimeOfDay.now();
@@ -258,6 +451,7 @@ class LeadsScreenState extends State<LeadsScreen> {
                     TextField(
                       controller: phoneController,
                       style: const TextStyle(color: Colors.white),
+                      keyboardType: TextInputType.phone,
                       decoration: InputDecoration(
                         labelText: 'Phone Number',
                         labelStyle: const TextStyle(color: Colors.grey),
@@ -344,20 +538,57 @@ class LeadsScreenState extends State<LeadsScreen> {
               ),
               child: const Text('Add'),
               onPressed: () async {
-                final lead = Lead(
-                  name: nameController.text,
-                  category: selectedCategory,
-                  status: selectedStatus,
-                  createdAt: DateTime.now(),
-                  phoneNumber: phoneController.text,
-                  assignedDate: assignedDate,
-                  assignedTime: assignedTime?.format(context),
-                );
-                final leadsService = context.read<LeadsService>();
+                // Validate inputs
+                if (nameController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter a name'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
+                // Capture context-dependent values before async operation
+                final errorMessenger = ScaffoldMessenger.of(context);
                 final navigator = Navigator.of(context);
-                await leadsService.addLead(lead);
-                if (!mounted) return;
-                navigator.pop();
+                final leadsService = context.read<LeadsService>();
+
+                try {
+                  final lead = Lead(
+                    name: nameController.text.trim(),
+                    category: selectedCategory,
+                    status: selectedStatus,
+                    createdAt: DateTime.now(),
+                    phoneNumber: phoneController.text.trim().isNotEmpty
+                        ? phoneController.text.trim()
+                        : null,
+                    assignedDate: assignedDate,
+                    assignedTime: assignedTime?.format(context),
+                    source: 'crm', // Mark as CRM-added lead
+                  );
+
+                  await leadsService.addLead(lead);
+
+                  navigator.pop();
+
+                  // Show success message
+                  errorMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Lead "${lead.name}" added successfully!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } catch (e) {
+                  debugPrint('Error adding lead: $e');
+                  errorMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Error adding lead: $e'),
+                      backgroundColor: Colors.red,
+                      duration: const Duration(seconds: 5),
+                    ),
+                  );
+                }
               },
             ),
           ],
@@ -410,10 +641,28 @@ class _LeadCategoryDropdownState extends State<_LeadCategoryDropdown> {
       builder: (context, labelService, child) {
         final labels = labelService.labels;
 
+        // Handle empty labels case
+        if (labels.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A2E),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Text(
+              'No categories available. Create labels in Settings first.',
+              style: TextStyle(color: Colors.grey),
+            ),
+          );
+        }
+
+        // Ensure selected category is valid
+        final validCategory = labels.any((l) => l.name == _selectedCategory)
+            ? _selectedCategory
+            : labels.first.name;
+
         return DropdownButtonFormField<String>(
-          initialValue: labels.any((l) => l.name == _selectedCategory)
-              ? _selectedCategory
-              : (labels.isNotEmpty ? labels.first.name : null),
+          value: validCategory,
           dropdownColor: const Color(0xFF1A1A2E),
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../widgets/dashboard_card.dart';
 import '../widgets/lead_item.dart';
 import '../widgets/bottom_nav_bar.dart';
+import '../widgets/mini_player_bar.dart';
 import '../models/lead_model.dart';
 import '../services/leads_service.dart';
 import '../services/team_service.dart';
@@ -46,32 +47,40 @@ class DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A2E),
       body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(),
-                if (_searchQuery.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  _buildSearchResults(recentLeads),
-                ],
-                const SizedBox(height: 20), // Spacing after header
-                _buildTotalLeadsCard(recentLeads),
-                const SizedBox(height: 20),
-                _buildStatsRow(
-                  pendingResponse: pendingResponse,
-                  newLeadsToday: newLeadsToday,
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeader(),
+                      if (_searchQuery.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        _buildSearchResults(recentLeads),
+                      ],
+                      const SizedBox(height: 20), // Spacing after header
+                      _buildTotalLeadsCard(recentLeads),
+                      const SizedBox(height: 20),
+                      _buildStatsRow(
+                        pendingResponse: pendingResponse,
+                        newLeadsToday: newLeadsToday,
+                      ),
+                      const SizedBox(height: 20),
+                      _buildRecentLeadsSection(recentLeads),
+                      const SizedBox(height: 20),
+                      _buildTeamCard(),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 20),
-                _buildRecentLeadsSection(recentLeads),
-                const SizedBox(height: 20),
-                _buildTeamCard(),
-              ],
+              ),
             ),
-          ),
+            // Mini Player Bar above bottom navigation
+            const MiniPlayerBar(),
+          ],
         ),
       ),
       bottomNavigationBar: CustomBottomNavBar(
@@ -693,6 +702,15 @@ class DashboardScreenState extends State<DashboardScreen> {
     required int pendingResponse,
     required int newLeadsToday,
   }) {
+    final leadsService = Provider.of<LeadsService>(context, listen: false);
+    final allLeads = leadsService.leads;
+
+    // Calculate pending response trend (last 7 days)
+    final pendingTrend = _calculatePendingTrend(allLeads);
+
+    // Calculate today's leads trend (last 7 days)
+    final todayTrend = _calculateTodayLeadsTrend(allLeads);
+
     return Row(
       children: [
         Expanded(
@@ -702,6 +720,7 @@ class DashboardScreenState extends State<DashboardScreen> {
             icon: Icons.pending_actions,
             color: const Color(0xFFFF6B6B),
             showChart: true,
+            chartData: pendingTrend, // Real data
           ),
         ),
         const SizedBox(width: 16),
@@ -712,6 +731,7 @@ class DashboardScreenState extends State<DashboardScreen> {
             icon: Icons.trending_up,
             color: const Color(0xFF4ECDC4),
             showChart: true,
+            chartData: todayTrend, // Real data
           ),
         ),
       ],
@@ -1071,5 +1091,66 @@ class DashboardScreenState extends State<DashboardScreen> {
         ),
       ],
     );
+  }
+
+  // Calculate pending response trend (New status leads over last 7 days)
+  List<FlSpot> _calculatePendingTrend(List<Lead> leads) {
+    final now = DateTime.now();
+    final last7Days = List.generate(7, (i) {
+      return DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(Duration(days: 6 - i));
+    });
+
+    final counts = last7Days.map((day) {
+      return leads
+          .where((lead) {
+            if (lead.status != 'New') return false;
+            final leadDate = DateTime(
+              lead.createdAt.year,
+              lead.createdAt.month,
+              lead.createdAt.day,
+            );
+            return leadDate.year == day.year &&
+                leadDate.month == day.month &&
+                leadDate.day == day.day;
+          })
+          .length
+          .toDouble();
+    }).toList();
+
+    return List.generate(7, (i) => FlSpot(i.toDouble(), counts[i]));
+  }
+
+  // Calculate today's leads trend (New leads over last 7 days)
+  List<FlSpot> _calculateTodayLeadsTrend(List<Lead> leads) {
+    final now = DateTime.now();
+    final last7Days = List.generate(7, (i) {
+      return DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(Duration(days: 6 - i));
+    });
+
+    final counts = last7Days.map((day) {
+      return leads
+          .where((lead) {
+            final leadDate = DateTime(
+              lead.createdAt.year,
+              lead.createdAt.month,
+              lead.createdAt.day,
+            );
+            return leadDate.year == day.year &&
+                leadDate.month == day.month &&
+                leadDate.day == day.day;
+          })
+          .length
+          .toDouble();
+    }).toList();
+
+    return List.generate(7, (i) => FlSpot(i.toDouble(), counts[i]));
   }
 }

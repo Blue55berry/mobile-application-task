@@ -1,5 +1,6 @@
 package com.example.sbs
 
+import android.accounts.AccountManager
 import android.app.*
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -8,20 +9,32 @@ import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
+import android.provider.ContactsContract
 import android.provider.Settings
 import android.util.Log
 import android.view.*
-import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.TextView
+import android.widget.*
 import androidx.core.app.NotificationCompat
 import android.content.pm.ServiceInfo
+import java.util.Calendar
 import kotlinx.coroutines.*
+
+
+// Simple Lead data class
+data class Lead(
+    val id: Int,
+    val name: String,
+    val phone: String,
+    val email: String?,
+    val category: String,
+    val status: String,
+    val isVip: Boolean
+)
 
 class CallOverlayService : Service() {
 
@@ -243,19 +256,23 @@ class CallOverlayService : Service() {
     private fun handleIncomingCall(phoneNumber: String?) {
         Log.d(TAG, "📞 Incoming call: $phoneNumber")
         
-        // Skip if phone number is invalid or Unknown
+        // Clean up previous overlays
+        removePopup()
+        removeFloatingIcon()
+        currentPhoneNumber = phoneNumber
+        currentLead = null
+        
+        // Skip if phone number is invalid
         val digits = phoneNumber?.replace(Regex("[^0-9]"), "") ?: ""
         if (digits.length < 6 || phoneNumber == "Unknown") {
             Log.d(TAG, "📞 Skipping invalid incoming call number: $phoneNumber")
             return
         }
         
-        // Remove any existing popup/icon from previous call
-        removePopup()
-        removeFloatingIcon()
-        // Clear previous lead state to ensure fresh lookup
-        currentLead = null
-        currentPhoneNumber = phoneNumber
+        // Show floating icon immediately
+        showFloatingIcon()
+        
+        // Query lead FIRST, then show correct popup (no flash!)
         queryLeadAndShowOverlay(phoneNumber, isIncoming = true)
         updateNotification("Incoming call: ${phoneNumber ?: "Unknown"}")
     }
@@ -263,19 +280,21 @@ class CallOverlayService : Service() {
     private fun handleOutgoingCall(phoneNumber: String?) {
         Log.d(TAG, "📞 Outgoing call: $phoneNumber")
         
-        // Skip if phone number is invalid or Unknown
+        // Clean up previous overlays
+        removePopup()
+        removeFloatingIcon()
+        currentPhoneNumber = phoneNumber
+        currentLead = null
+        
+        // Skip if phone number is invalid
         val digits = phoneNumber?.replace(Regex("[^0-9]"), "") ?: ""
         if (digits.length < 6 || phoneNumber == "Unknown") {
             Log.d(TAG, "📞 Skipping invalid outgoing call number: $phoneNumber")
             return
         }
         
-        // Remove any existing popup/icon from previous call
-        removePopup()
-        removeFloatingIcon()
-        // Clear previous lead state to ensure fresh lookup
-        currentLead = null
-        currentPhoneNumber = phoneNumber
+        showFloatingIcon()
+        
         queryLeadAndShowOverlay(phoneNumber, isIncoming = false)
         updateNotification("Outgoing call: ${phoneNumber ?: "Unknown"}")
     }
@@ -297,23 +316,129 @@ class CallOverlayService : Service() {
     private fun queryLeadAndShowOverlay(phoneNumber: String?, isIncoming: Boolean) {
         if (phoneNumber == null) return
         
+        Log.d(TAG, "🔍 ===== QUERY START =====")
+        Log.d(TAG, "📞 Incoming phone number: '$phoneNumber'")
+        
         // Reset query state
         isQueryComplete = false
         
         serviceScope.launch {
-            currentLead = queryLeadFromDatabase(phoneNumber)
-            isQueryComplete = true  // Mark query as complete
-            Log.d(TAG, "🔍 Lead lookup result: ${if (currentLead != null) "FOUND: ${currentLead?.name}" else "NOT FOUND"}")
+            // Parallel lookup for speed
+            val contactNameDeferred = async { queryPhoneContact(phoneNumber) }
+            val crmLeadDeferred = async { queryLeadFromDatabase(phoneNumber) }
             
-            // Show floating icon
-            showFloatingIcon()
+            val contactName = contactNameDeferred.await()
+            val crmLead = crmLeadDeferred.await()
             
-            // Auto-show popup if lead is saved
-            if (currentLead != null) {
-                // Small delay for better UX
-                kotlinx.coroutines.delay(500)
-                showPopup()
+            Log.d(TAG, "📊 Query Results:")
+            Log.d(TAG, "   Contact Name: ${contactName ?: "null"}")
+            Log.d(TAG, "   CRM Lead: ${crmLead?.name ?: "null"} (ID: ${crmLead?.id ?: "N/A"})")
+            
+            // IMPROVED LOGIC:
+            // 1. If contact exists in SBS database -> Show saved contact popup
+            // 2. If not in SBS but in phone contacts -> Show save form with pre-filled name
+            // 3. If completely unknown -> Show save form with empty fields
+            
+            currentLead = crmLead  // Only set if actually in SBS database
+            
+            // Show debug toast
+            withContext(Dispatchers.Main) {
+                val message = if (crmLead != null) {
+                    "✅ Found SBS contact: ${crmLead.name}"
+                } else if (contactName != null) {
+                    "📱 Phone contact only: $contactName"
+                } else {
+                    "❌ Unknown number: $phoneNumber"
+                }
+                Toast.makeText(this@CallOverlayService, message, Toast.LENGTH_LONG).show()
             }
+            
+            // Store phone contact name for form pre-fill (used in createNewLeadFormPopup)
+            if (contactName != null && crmLead == null) {
+                // Contact exists in phone but not in SBS
+                // We'll use this in the form to pre-fill the name
+                Log.d(TAG, "📱 Phone contact '$contactName' not in SBS - will show save form")
+            }
+            
+            isQueryComplete = true
+            
+            // CRITICAL: Refresh popup with correct type
+            withContext(Dispatchers.Main) {
+                // Remove old popup first, then show new one with updated currentLead
+                removePopup()
+                showFloatingIcon()
+                showPopup()
+                
+                Log.d(TAG, "🎯 Refreshed popup: ${if (currentLead != null) "SAVED CONTACT DETAILS" else "SAVE FORM"}")
+            }
+        }
+    }
+    
+    private fun queryPhoneContact(phoneNumber: String): String? {
+        return try {
+            val uri = Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                Uri.encode(phoneNumber)
+            )
+            
+            val projection = arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME)
+            val cursor = contentResolver.query(uri, projection, null, null, null)
+            
+            var contactName: String? = null
+            if (cursor != null && cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
+                if (nameIndex >= 0) {
+                    contactName = cursor.getString(nameIndex)
+                    Log.d(TAG, "📱 Found phone contact: $contactName for $phoneNumber")
+                }
+                cursor.close()
+            }
+            
+            contactName
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error querying phone contacts: ${e.message}", e)
+            null
+        }
+    }
+    
+    private fun getContactPhotoUri(phoneNumber: String?): Uri? {
+        if (phoneNumber == null) {
+            Log.d(TAG, "📸 No phone number provided for photo lookup")
+            return null
+        }
+        
+        return try {
+            val uri = Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                Uri.encode(phoneNumber)
+            )
+            
+            Log.d(TAG, "📸 Looking up photo for: $phoneNumber")
+            val projection = arrayOf(ContactsContract.PhoneLookup.PHOTO_URI)
+            val cursor = contentResolver.query(uri, projection, null, null, null)
+            
+            var photoUriString: String? = null
+            if (cursor != null && cursor.moveToFirst()) {
+                val photoIndex = cursor.getColumnIndex(ContactsContract.PhoneLookup.PHOTO_URI)
+                if (photoIndex >= 0) {
+                    photoUriString = cursor.getString(photoIndex)
+                    if (photoUriString != null) {
+                        Log.d(TAG, "✅ Found contact photo URI: $photoUriString")
+                    } else {
+                        Log.d(TAG, "⚠️ Contact exists but no photo URI available")
+                    }
+                } else {
+                    Log.d(TAG, "⚠️ PHOTO_URI column not found in cursor")
+                }
+                cursor.close()
+            } else {
+                Log.d(TAG, "⚠️ No contact found for $phoneNumber")
+            }
+            
+            if (photoUriString != null) Uri.parse(photoUriString) else null
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error getting contact photo for $phoneNumber", e)
+            null
         }
     }
 
@@ -449,7 +574,11 @@ class CallOverlayService : Service() {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or 
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or 
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or  // Show on lock screen
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,      // Turn screen on if needed
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
@@ -458,7 +587,7 @@ class CallOverlayService : Service() {
             }
             windowManager?.addView(floatingIconView, params)
             isFloatingIconVisible = true
-            Log.d(TAG, "✅ Floating icon shown successfully")
+            Log.d(TAG, "✅ Floating icon shown successfully (lock screen enabled)")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error showing floating icon: ${e.message}", e)
         }
@@ -598,10 +727,13 @@ class CallOverlayService : Service() {
         try {
             popupView = createPopupView()
             
-            // Determine flags: 
-            // - Info popup (currentLead != null): No focus needed (FLAG_NOT_FOCUSABLE)
-            // - Form popup (currentLead == null): Needs focus for keyboard, remove FLAG_NOT_FOCUSABLE
-            var flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+            // MAXIMUM PRIORITY FLAGS - Show before ALL other apps
+            var flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                       WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                       WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or  // Show on lockscreen
+                       WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or    // Wake screen
+                       WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS     // No bounds
+            
             if (currentLead != null) {
                 flags = flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
             }
@@ -609,11 +741,17 @@ class CallOverlayService : Service() {
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+                // Use TYPE_SYSTEM_ALERT for HIGHEST priority (above all apps)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_SYSTEM_ALERT  // Higher than TYPE_PHONE
+                },
                 flags,
                 PixelFormat.TRANSLUCENT
             ).apply {
-                gravity = Gravity.BOTTOM
+                gravity = Gravity.CENTER  // Center position for compact layout
                 // Allow resizing for keyboard and force it to be visible when focused
                 softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
             }
@@ -636,17 +774,17 @@ class CallOverlayService : Service() {
     private fun createSavedLeadPopup(): View {
         val density = resources.displayMetrics.density
         
-        // Main container with semi-transparent background
+        // Compact semi-transparent background
         val mainContainer = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            setBackgroundColor(Color.parseColor("#80000000"))
+            setBackgroundColor(Color.parseColor("#99000000")) // Medium transparent
             setPadding(0, 0, 0, 0)
         }
 
-        // Card view
+        // Compact card - notification banner style
         val cardView = LinearLayout(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -654,161 +792,516 @@ class CallOverlayService : Service() {
             ).apply {
                 setMargins(
                     (16 * density).toInt(),
-                    (16 * density).toInt(),
+                    (8 * density).toInt(),
                     (16 * density).toInt(),
                     (16 * density).toInt()
                 )
             }
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#2A2A3E"))
-                cornerRadius = 24 * density
-                setStroke((1 * density).toInt(), Color.parseColor("#4D6C5CE7"))
+                // Clean gradient
+                colors = intArrayOf(
+                    Color.parseColor("#2D1B69"), 
+                    Color.parseColor("#1A1A3E")
+                )
+                gradientType = GradientDrawable.LINEAR_GRADIENT
+                cornerRadius = 20 * density
+                setStroke((1.5f * density).toInt(), Color.parseColor("#7C3AED"))
             }
-            elevation = 24f
+            elevation = 16 * density
             setPadding(
-                (24 * density).toInt(),
-                (24 * density).toInt(),
-                (24 * density).toInt(),
-                (24 * density).toInt()
+                (16 * density).toInt(),
+                (16 * density).toInt(),
+                (16 * density).toInt(),
+                (16 * density).toInt()
             )
         }
 
-        // Close button
-        val closeButton = TextView(this).apply {
+        // ===== COMPACT HEADER (Horizontal Layout) =====
+        val headerLayout = LinearLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                gravity = Gravity.END
+                bottomMargin = (12 * density).toInt()
             }
-            text = "✕"
-            textSize = 24f
-            setTextColor(Color.WHITE)
-            setPadding((12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt(), (8 * density).toInt())
-            setOnClickListener { removePopup() }
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        cardView.addView(closeButton)
 
-        // Avatar
-        val avatarSize = (80 * density).toInt()
+        // Compact Avatar with Letter (Left)
+        val avatarSize = (48 * density).toInt()
         val avatar = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(avatarSize, avatarSize).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                topMargin = (8 * density).toInt()
-            }
+            layoutParams = LinearLayout.LayoutParams(avatarSize, avatarSize)
             text = (currentLead?.name?.firstOrNull()?.uppercase() ?: "?")
             gravity = Gravity.CENTER
-            textSize = 36f
+            textSize = 20f
             setTextColor(Color.WHITE)
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                colors = intArrayOf(Color.parseColor("#6C5CE7"), Color.parseColor("#A855F7"))
-                setStroke((3 * density).toInt(), Color.parseColor("#FFFFFF"))
+                colors = intArrayOf(
+                    Color.parseColor("#8B5CF6"),
+                    Color.parseColor("#EC4899")
+                )
             }
-            elevation = 8f
         }
-        cardView.addView(avatar)
+        headerLayout.addView(avatar)
 
-        // Name
-        val name = currentLead?.name ?: "Unknown Caller"
-        cardView.addView(TextView(this).apply {
+        // Contact Info (Center)
+        val infoLayout = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins((12 * density).toInt(), 0, (8 * density).toInt(), 0)
+            }
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val name = currentLead?.name ?: "Unknown"
+        infoLayout.addView(TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            text = name
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+
+        val phoneNumber = currentPhoneNumber ?: ""
+        if (phoneNumber.isNotEmpty()) {
+            infoLayout.addView(TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = (2 * density).toInt()
+                }
+                text = phoneNumber
+                textSize = 13f
+                setTextColor(Color.parseColor("#A78BFA"))
+                typeface = android.graphics.Typeface.MONOSPACE
+                maxLines = 1
+            })
+        }
+
+        headerLayout.addView(infoLayout)
+
+        // Action Icons (Right)
+        val actionsLayout = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        // WhatsApp Icon
+        val whatsappIcon = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                (40 * density).toInt(),
+                (40 * density).toInt()
+            ).apply {
+                setMargins((4 * density).toInt(), 0, (4 * density).toInt(), 0)
+            }
+            text = "💬"
+            gravity = Gravity.CENTER
+            textSize = 20f
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#25D366"))
+            }
+            setOnClickListener {
+                val message = "Hello ${name}, contacting you from SBS"
+                val intent = Intent(Intent.ACTION_VIEW)
+                intent.data = android.net.Uri.parse("https://wa.me/${phoneNumber.replace("+", "")}?text=${android.net.Uri.encode(message)}")
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                try {
+                    startActivity(intent)
+                    // Log communication
+                    logCommunication("whatsapp", "outbound", phoneNumber, null, message)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error opening WhatsApp", e)
+                }
+            }
+        }
+        actionsLayout.addView(whatsappIcon)
+
+        // Email Icon
+        val emailIcon = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                (40 * density).toInt(),
+                (40 * density).toInt()
+            ).apply {
+                setMargins((4 * density).toInt(), 0, (4 * density).toInt(), 0)
+            }
+            text = "📧"
+            gravity = Gravity.CENTER
+            textSize = 20f
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#EA4335")) // Gmail red
+            }
+            setOnClickListener {
+                // Open email composer with lead details
+                val email = currentLead?.email ?: ""
+                val subject = android.net.Uri.encode("Follow up from SBS")
+                val body = android.net.Uri.encode("Hi $name,\n\nThank you for your time on the call.\n\nBest regards,\nSBS Team")
+                
+                val intent = Intent(Intent.ACTION_SENDTO).apply {
+                    data = android.net.Uri.parse("mailto:")
+                    putExtra(Intent.EXTRA_EMAIL, arrayOf(email))
+                    putExtra(Intent.EXTRA_SUBJECT, subject)
+                    putExtra(Intent.EXTRA_TEXT, body)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                
+                try {
+                    startActivity(Intent.createChooser(intent, "Send Email").apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    })
+                    // Log communication
+                    logCommunication("email", "outbound", email, "Follow up from SBS", body)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error opening email", e)
+                }
+            }
+        }
+        actionsLayout.addView(emailIcon)
+
+        // Call Icon
+        val callIcon = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                (40 * density).toInt(),
+                (40 * density).toInt()
+            ).apply {
+                setMargins((4 * density).toInt(), 0, (4 * density).toInt(), 0)
+            }
+            text = "📞"
+            gravity = Gravity.CENTER
+            textSize = 20f
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#4CAF50"))
+            }
+        }
+        actionsLayout.addView(callIcon)
+
+        // Cancel/Close Icon (replaces three-dot menu)
+        val closeIcon = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                (40 * density).toInt(),
+                (40 * density).toInt()
+            ).apply {
+                setMargins((4 * density).toInt(), 0, 0, 0)
+            }
+            text = "×"
+            gravity = Gravity.CENTER
+            textSize = 28f
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#2D2D4A"))
+            }
+            setOnClickListener { removePopup() }
+        }
+        actionsLayout.addView(closeIcon)
+
+        headerLayout.addView(actionsLayout)
+        cardView.addView(headerLayout)
+
+        // Add spacing after header
+        cardView.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (1 * density).toInt()
+            ).apply {
+                topMargin = (16 * density).toInt()
+                bottomMargin = (16 * density).toInt()
+            }
+            setBackgroundColor(Color.parseColor("#333355")) // Subtle divider
+        })
+
+        // ===== ADD LABEL BUTTON (Pill-shaped) =====
+        val addLabelButton = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.START
+                bottomMargin = (12 * density).toInt()
+            }
+            text = "Add Label +"
+            textSize = 15f // Slightly larger
+            setTextColor(Color.parseColor("#6C5CE7"))
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding((20 * density).toInt(), (12 * density).toInt(), (20 * density).toInt(), (12 * density).toInt()) // Larger touch target
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#2D2D4A")) // Darker purple for button bg
+                cornerRadius = 20 * density
+                setStroke((2 * density).toInt(), Color.parseColor("#6C5CE7"))
+            }
+            setOnClickListener {
+                showLabelSelector(this)
+            }
+        }
+        cardView.addView(addLabelButton)
+
+        // ===== DROPDOWNS SECTION =====
+        val dropdownsContainer = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = (8 * density).toInt()
+            }
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        // Move to... dropdown
+        val moveToButton = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins(0, 0, (8 * density).toInt(), 0)
+            }
+            text = "Move to... ▼"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding((12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt())
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#2D2D4A")) // Dark purple background
+                cornerRadius = 8 * density
+            }
+            setOnClickListener { view ->
+                showStatusDropdown(view, this)
+            }
+        }
+        dropdownsContainer.addView(moveToButton)
+
+        // Assigned to dropdown
+        val assignedToButton = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins((8 * density).toInt(), 0, 0, 0)
+            }
+            text = "Assigned to ▼"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding((12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt())
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#2D2D4A")) // Dark purple background
+                cornerRadius = 8 * density
+            }
+            setOnClickListener {
+                showTeamMemberSelector(this)
+            }
+        }
+        dropdownsContainer.addView(assignedToButton)
+
+        cardView.addView(dropdownsContainer)
+
+        // ===== CREATE MEETING BUTTON =====
+        val createMeetingButton = Button(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
                 topMargin = (16 * density).toInt()
             }
-            text = name
-            textSize = 28f
+            text = "📅 Create Meeting"
+            textSize = 15f // Larger
             setTextColor(Color.WHITE)
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-        })
+            setPadding(0, (16 * density).toInt(), 0, (16 * density).toInt()) // More prominent
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#2D2D4A")) // Dark purple background
+                cornerRadius = 8 * density
+                setStroke((1 * density).toInt(), Color.parseColor("#DDDDDD"))
+            }
+            setOnClickListener {
+                showCreateMeetingDialog()
+            }
+        }
+        cardView.addView(createMeetingButton)
 
-        // Category badge
-        val category = currentLead?.category ?: "Unknown"
-        val categoryColor = when(category.lowercase()) {
-            "client" -> "#00C853"
-            "partner" -> "#2196F3"
-            "vendor" -> "#FF9800"
-            "vip" -> "#FFD700"
-            else -> "#6C5CE7"
+        // ===== AUTOMATIC MESSAGES SECTION =====
+        val autoMessagesContainer = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = (16 * density).toInt()
+            }
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#252540")) // Slightly lighter purple for contrast
+                cornerRadius = 8 * density
+            }
+            setPadding((16 * density).toInt(), (12 * density).toInt(), (16 * density).toInt(), (12 * density).toInt())
         }
 
-        val categoryBadge = TextView(this).apply {
+        // Auto messages header
+        val autoMessagesHeader = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        autoMessagesHeader.addView(TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+            text = "Automatic Messages"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        })
+
+        autoMessagesHeader.addView(TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            text = "⚙"
+            textSize = 18f
+            setTextColor(Color.parseColor("#AAAAAA"))
+            setOnClickListener {
+                Log.d(TAG, "Auto messages settings clicked")
+            }
+        })
+
+        autoMessagesContainer.addView(autoMessagesHeader)
+
+        // Auto messages description
+        autoMessagesContainer.addView(TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = (8 * density).toInt()
+            }
+            text = "Send an automatic reply to missed calls and greet new customers with your custom message."
+            textSize = 13f
+            setTextColor(Color.parseColor("#AAAAAA"))
+        })
+
+        // Turn On button
+        autoMessagesContainer.addView(TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
                 topMargin = (12 * density).toInt()
             }
-            text = category.uppercase()
+            text = "TURN ON"
             textSize = 14f
-            setTextColor(Color.WHITE)
+            setTextColor(Color.parseColor("#6C5CE7"))
             typeface = android.graphics.Typeface.DEFAULT_BOLD
-            setPadding((20 * density).toInt(), (8 * density).toInt(), (20 * density).toInt(), (8 * density).toInt())
+            setOnClickListener {
+                toggleAutoMessages()
+            }
+        })
+
+        cardView.addView(autoMessagesContainer)
+
+        // ===== ORIGINAL ACTION BUTTONS (Preserved) =====
+        val actionsRow = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = (20 * density).toInt()
+            }
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        // Edit Lead button
+        val editButton = Button(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins(0, 0, (4 * density).toInt(), 0)
+            }
+            text = "✏️ EDIT"
+            textSize = 12f
+            setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
-                setColor(Color.parseColor(categoryColor))
-                cornerRadius = 20 * density
+                setColor(Color.parseColor("#6C5CE7"))
+                cornerRadius = 8 * density
             }
-            elevation = 4f
-        }
-        cardView.addView(categoryBadge)
-
-        // Phone number
-        val phoneNumber = currentPhoneNumber ?: ""
-        if (phoneNumber.isNotEmpty()) {
-            cardView.addView(TextView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = (16 * density).toInt()
-                }
-                text = phoneNumber
-                textSize = 16f
-                setTextColor(Color.parseColor("#AAAAAA"))
-                gravity = Gravity.CENTER
-            })
-        }
-
-        // Email
-        currentLead?.email?.let { email ->
-            if (email.isNotEmpty()) {
-                cardView.addView(TextView(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply {
-                        topMargin = (8 * density).toInt()
-                    }
-                    text = "📧 $email"
-                    textSize = 14f
-                    setTextColor(Color.parseColor("#CCCCCC"))
-                    gravity = Gravity.CENTER
-                })
+            setOnClickListener {
+                removePopup()
+                notifyFlutterEditLead(currentLead?.id ?: 0)
             }
         }
+        actionsRow.addView(editButton)
 
-        // Status
-        currentLead?.status?.let { status ->
-            cardView.addView(TextView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = (12 * density).toInt()
-                }
-                text = "Status: $status"
-                textSize = 13f
-                setTextColor(Color.parseColor("#CCCCCC"))
-                gravity = Gravity.CENTER
-            })
+        // SAVE button (NEW)
+        val saveButton = Button(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins((4 * density).toInt(), 0, (4 * density).toInt(), 0)
+            }
+            text = "💾 SAVE"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#4CAF50")) // Green for save
+                cornerRadius = 8 * density
+            }
+            setOnClickListener {
+                saveContactToDatabase()
+                removePopup()
+            }
         }
+        actionsRow.addView(saveButton)
 
+        // Create Task button
+        val taskButton = Button(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins((4 * density).toInt(), 0, 0, 0)
+            }
+            text = "✓ TASK"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#00BCD4"))
+                cornerRadius = 8 * density
+            }
+            setOnClickListener {
+                showCreateTaskDialog()
+            }
+        }
+        actionsRow.addView(taskButton)
+
+        cardView.addView(actionsRow)
+        
         mainContainer.setOnClickListener { removePopup() }
         cardView.setOnClickListener { /* Prevent dismissal */ }
         
@@ -1020,7 +1513,7 @@ class CallOverlayService : Service() {
             }
             text = "Cancel"
             textSize = 16f
-            setTextColor(Color.parseColor("#AAAAAA"))
+            setTextColor(Color.parseColor("#AAAAAA")) // Light gray for secondary text
             gravity = Gravity.CENTER
             setPadding((16 * density).toInt(), (14 * density).toInt(), (16 * density).toInt(), (14 * density).toInt())
             background = GradientDrawable().apply {
@@ -1066,6 +1559,498 @@ class CallOverlayService : Service() {
         
         return mainContainer
     }
+    
+    
+    // ===== BUTTON HELPER METHODS =====
+    
+    private fun showLabelSelector(button: TextView?) {
+        // Predefined labels
+        val labelNames = arrayOf("Hot Lead", "Cold Lead", "Follow Up", "Not Interested", "Customer", "VIP")
+        
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog)
+            .setTitle("Select Label")
+            .setItems(labelNames) { _, which ->
+                val selectedLabel = labelNames[which]
+                
+                // Update button text and style
+                button?.text = selectedLabel
+                button?.setTextColor(Color.WHITE)
+                button?.background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#6C5CE7"))
+                    cornerRadius = 20 * resources.displayMetrics.density
+                }
+                
+                // If contact is not in CRM, add them first
+                if (currentLead?.id == 0) {
+                    saveContactToCRM(selectedLabel)
+                } else {
+                    Toast.makeText(this, "✅ Label: $selectedLabel", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            .create()
+        
+        // CRITICAL: Set window type to show over phone UI
+        dialog.window?.setType(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+            }
+        )
+        dialog.show()
+    }
+    
+    private fun saveContactToCRM(label: String) {
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val dbPath = getDatabasePath("sbs_database.db")
+                if (!dbPath.exists()) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@CallOverlayService, "Database not found", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+                
+                val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                    dbPath.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+                )
+                
+                val values = android.content.ContentValues().apply {
+                    put("name", currentLead?.name ?: "Unknown")
+                    put("phoneNumber", currentLead?.phone ?: "")
+                    put("email", currentLead?.email ?: "")
+                    put("category", label)
+                    put("status", "New")
+                    put("isVip", 0)
+                    put("createdAt", System.currentTimeMillis())
+                }
+                
+                val newId = db.insert("leads", null, values)
+                db.close()
+                
+                // Update currentLead with new ID
+                currentLead = currentLead?.copy(id = newId.toInt(), category = label)
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@CallOverlayService, "Added to CRM with label: $label", Toast.LENGTH_LONG).show()
+                }
+                
+                // Notify Flutter
+                val intent = Intent("com.example.sbs.LEAD_CREATED")
+                intent.putExtra("lead_id", newId.toInt())
+                sendBroadcast(intent)
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving contact to CRM: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@CallOverlayService, "Error adding to CRM", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+    
+    private fun showStatusDropdown(view: View, button: TextView) {
+        val statuses = arrayOf("New", "Contacted", "Qualified", "Won", "Lost")
+        val popupMenu = PopupMenu(this, view)
+        statuses.forEachIndexed { index, status ->
+            popupMenu.menu.add(0, index, index, status)
+        }
+        popupMenu.setOnMenuItemClickListener { menuItem ->
+            val newStatus = statuses[menuItem.itemId]
+            
+            // Update button text to show selection
+            button.text = "$newStatus ▼"
+            
+            // If contact is not in CRM, add them first
+            if (currentLead?.id == 0) {
+                saveContactToCRMWithStatus(newStatus)
+            } else {
+                updateLeadStatus(currentLead?.id ?: 0, newStatus)
+                Toast.makeText(this, "✅ Status: $newStatus", Toast.LENGTH_SHORT).show()
+            }
+            true
+        }
+        popupMenu.show()
+    }
+    
+    private fun saveContactToCRMWithStatus(status: String) {
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val dbPath = getDatabasePath("sbs_database.db")
+                if (!dbPath.exists()) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@CallOverlayService, "Database not found", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+                
+                val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                    dbPath.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+                )
+                
+                val values = android.content.ContentValues().apply {
+                    put("name", currentLead?.name ?: "Unknown")
+                    put("phoneNumber", currentLead?.phone ?: "")
+                    put("email", currentLead?.email ?: "")
+                    put("category", "Contact")
+                    put("status", status)
+                    put("isVip", 0)
+                    put("createdAt", System.currentTimeMillis())
+                }
+                
+                val newId = db.insert("leads", null, values)
+                db.close()
+                
+                currentLead = currentLead?.copy(id = newId.toInt(), status = status)
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@CallOverlayService, "Added to CRM with status: $status", Toast.LENGTH_LONG).show()
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving contact: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@CallOverlayService, "Error adding to CRM", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+    
+    private fun showTeamMemberSelector(button: TextView) {
+        val teamMembers = arrayOf("John Doe", "Jane Smith", "Mike Johnson", "Unassigned")
+        
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog)
+            .setTitle("Assign To")
+            .setItems(teamMembers) { _, which ->
+                val selectedMember = teamMembers[which]
+                button.text = "$selectedMember ▼"
+                Toast.makeText(this, "✅ Assigned to: $selectedMember", Toast.LENGTH_SHORT).show()
+            }
+            .create()
+        
+        dialog.window?.setType(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+            }
+        )
+        dialog.show()
+    }
+    
+    private fun showCreateMeetingDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(50, 40, 50, 10)
+        }
+        
+        val titleInput = EditText(this).apply {
+            hint = "Meeting title"
+            setText("Meeting with ${currentLead?.name ?: "Contact"}")
+        }
+        layout.addView(titleInput)
+        
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog)
+            .setTitle("Create Meeting")
+            .setView(layout)
+            .setPositiveButton("Pick Date") { _, _ ->
+                val title = titleInput.text.toString()
+                showDateTimePicker(title)
+            }
+            .setNegativeButton("Cancel", null)
+            .create()
+        
+        // CRITICAL: Set window type to show over phone UI
+        dialog.window?.setType(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+            }
+        )
+        dialog.show()
+    }
+    
+    /**
+     * Save current contact to SBS database via Flutter MethodChannel
+     */
+    private fun saveContactToDatabase() {
+        val phone = currentPhoneNumber ?: return
+        val name = currentLead?.name ?: "Unknown"
+        val category = currentLead?.category ?: "New"
+        
+        // Show immediate feedback
+        Toast.makeText(this, "💾 Saving contact...", Toast.LENGTH_SHORT).show()
+        
+        // Notify Flutter to save the contact
+        MethodChannelHandler.getInstance()?.notifySaveContact(name, phone, category)
+        
+        Log.d(TAG, "Save contact request sent: $name ($phone)")
+    }
+    
+    private fun showDateTimePicker(title: String) {
+        val calendar = Calendar.getInstance()
+        val dateDialog = DatePickerDialog(this, { _, year, month, dayOfMonth ->
+            val timeDialog = TimePickerDialog(this, { _, hourOfDay, minute ->
+                saveMeeting(title, year, month, dayOfMonth, hourOfDay, minute)
+            }, calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE), true)
+            
+            // CRITICAL: Set window type
+            timeDialog.window?.setType(
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+                }
+            )
+            timeDialog.show()
+        }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH))
+        
+        // CRITICAL: Set window type
+        dateDialog.window?.setType(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+            }
+        )
+        dateDialog.show()
+    }
+    
+    private fun saveMeeting(title: String, year: Int, month: Int, day: Int, hour: Int, minute: Int) {
+        // Save to SharedPreferences or send to Flutter
+        val prefs = getSharedPreferences("sbs_prefs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("last_meeting", "$title on $day/${month+1}/$year at $hour:$minute")
+            .apply()
+        
+        Toast.makeText(this, "Meeting scheduled: $title", Toast.LENGTH_LONG).show()
+        
+        // Notify Flutter
+        val intent = Intent("com.example.sbs.MEETING_CREATED")
+        intent.putExtra("title", title)
+        intent.putExtra("lead_id", currentLead?.id ?: 0)
+        sendBroadcast(intent)
+    }
+    
+    private fun toggleAutoMessages() {
+        val prefs = getSharedPreferences("sbs_prefs", Context.MODE_PRIVATE)
+        val isEnabled = prefs.getBoolean("auto_messages_enabled", false)
+        
+        if (isEnabled) {
+            prefs.edit().putBoolean("auto_messages_enabled", false).apply()
+            Toast.makeText(this, "Auto Messages turned OFF", Toast.LENGTH_SHORT).show()
+        } else {
+            showAutoMessageSetup()
+        }
+    }
+    
+    private fun showAutoMessageSetup() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(50, 40, 50, 10)
+        }
+        
+        val input = EditText(this).apply {
+            hint = "Enter your auto-reply message"
+            setText("Thanks for calling! I'll get back to you soon.")
+            minLines = 3
+        }
+        layout.addView(input)
+        
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog)
+            .setTitle("Setup Auto Messages")
+            .setView(layout)
+            .setPositiveButton("Enable") { _, _ ->
+                val message = input.text.toString()
+                val prefs = getSharedPreferences("sbs_prefs", Context.MODE_PRIVATE)
+                prefs.edit()
+                    .putBoolean("auto_messages_enabled", true)
+                    .putString("auto_message_text", message)
+                    .apply()
+                Toast.makeText(this, "Auto Messages enabled", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .create()
+        
+        // CRITICAL: Set window type to show over phone UI
+        dialog.window?.setType(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+            }
+        )
+        dialog.show()
+    }
+    
+    private fun notifyFlutterEditLead(leadId: Int) {
+        // Show immediate feedback
+        Toast.makeText(this, "✏️ Opening edit form...", Toast.LENGTH_SHORT).show()
+        
+        val intent = Intent("com.example.sbs.EDIT_LEAD")
+        intent.putExtra("lead_id", leadId)
+        sendBroadcast(intent)
+        Log.d(TAG, "Sent edit lead broadcast for ID: $leadId")
+    }
+    
+    private fun showCreateTaskDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(50, 40, 50, 10)
+        }
+        
+        val titleInput = EditText(this).apply {
+            hint = "Task title"
+            setText("Follow up with ${currentLead?.name ?: "Contact"}")
+        }
+        layout.addView(titleInput)
+        
+        val priorityLabel = TextView(this).apply {
+            text = "Priority:"
+            setPadding(0, 20, 0, 10)
+        }
+        layout.addView(priorityLabel)
+        
+        val prioritySpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@CallOverlayService, android.R.layout.simple_spinner_item,
+                arrayOf("Low", "Medium", "High"))
+        }
+        layout.addView(prioritySpinner)
+        
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog)
+            .setTitle("Create Task")
+            .setView(layout)
+            .setPositiveButton("Create") { _, _ ->
+                val title = titleInput.text.toString()
+                val priority = prioritySpinner.selectedItem.toString()
+                saveTask(title, priority)
+            }
+            .setNegativeButton("Cancel", null)
+            .create()
+        
+        // CRITICAL: Set window type to show over phone UI
+        dialog.window?.setType(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+            }
+        )
+        dialog.show()
+    }
+    
+    private fun saveTask(title: String, priority: String) {
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val dbPath = getDatabasePath("sbs_database.db")
+                if (!dbPath.exists()) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@CallOverlayService, "Database not found", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+                
+                val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                    dbPath.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+                )
+                
+                val values = android.content.ContentValues().apply {
+                    put("task", title)
+                    put("leadId", currentLead?.id ?: 0)
+                    put("priority", priority)
+                    put("isDone", 0)
+                    put("createdAt", System.currentTimeMillis())
+                }
+                
+                db.insert("tasks", null, values)
+                db.close()
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@CallOverlayService, "✅ Task created: $title", Toast.LENGTH_LONG).show()
+                }
+                
+                // Notify Flutter
+                val intent = Intent("com.example.sbs.TASK_CREATED")
+                intent.putExtra("task_title", title)
+                sendBroadcast(intent)
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving task: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@CallOverlayService, "Error creating task", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+    
+    private fun updateLeadLabel(leadId: Int, labelId: Int) {
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val dbPath = getDatabasePath("sbs_database.db")
+                if (!dbPath.exists()) return@launch
+                
+                val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                    dbPath.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+                )
+                
+                val values = android.content.ContentValues().apply {
+                    put("labelId", labelId)
+                }
+                
+                db.update("leads", values, "id = ?", arrayOf(leadId.toString()))
+                db.close()
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@CallOverlayService, "Label updated", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating label: ${e.message}", e)
+            }
+        }
+    }
+    
+    private fun updateLeadStatus(leadId: Int, status: String) {
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val dbPath = getDatabasePath("sbs_database.db")
+                if (!dbPath.exists()) return@launch
+                
+                val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                    dbPath.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+                )
+                
+                val values = android.content.ContentValues().apply {
+                    put("status", status)
+                }
+                
+                db.update("leads", values, "id = ?", arrayOf(leadId.toString()))
+                db.close()
+                
+                Log.d(TAG, "Lead $leadId status updated to: $status")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating status: ${e.message}", e)
+            }
+        }
+    }
 
     private fun saveNewLead(name: String, email: String, category: String) {
         serviceScope.launch(Dispatchers.IO) {
@@ -1087,15 +2072,21 @@ class CallOverlayService : Service() {
                     put("isVip", 0)
                 }
                 
-                val id = db.insert("leads", null, values)
+                // Use insertWithOnConflict to UPDATE if contact exists, INSERT if new
+                val id = db.insertWithOnConflict(
+                    "leads",
+                    null,
+                    values,
+                    android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE
+                )
                 db.close()
                 
                 withContext(Dispatchers.Main) {
                     if (id > 0) {
-                        Log.d(TAG, "✅ New lead saved: $name (ID: $id)")
+                        Log.d(TAG, "✅ Contact saved/updated: $name (ID: $id)")
                         android.widget.Toast.makeText(
                             this@CallOverlayService,
-                            "Contact saved successfully!",
+                            "✅ Contact saved successfully!",
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                         
@@ -1209,14 +2200,57 @@ class CallOverlayService : Service() {
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.notify(NOTIFICATION_ID, notification)
     }
-}
 
-data class Lead(
-    val id: Int,
-    val name: String,
-    val phone: String,
-    val email: String?,
-    val category: String,
-    val status: String,
-    val isVip: Boolean
-)
+    // Log communication to database
+    private fun logCommunication(
+        type: String,
+        direction: String,
+        recipient: String?,
+        subject: String?,
+        body: String?
+    ) {
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                val leadId = currentLead?.id ?: return@launch
+                
+                val dbPath = getDatabasePath("sbs_database.db")
+                if (!dbPath.exists()) {
+                    Log.e(TAG, "Database not found")
+                    return@launch
+                }
+
+                val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                    dbPath.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+                )
+
+                val values = android.content.ContentValues().apply {
+                    put("leadId", leadId)
+                    put("type", type)
+                    put("direction", direction)
+                    if (subject != null) put("subject", subject)
+                    if (body != null) put("body", body)
+                    if (type == "email") {
+                        put("emailAddress", recipient)
+                    } else {
+                        put("phoneNumber", recipient)
+                    }
+                    put("timestamp", System.currentTimeMillis())
+                    put("status", "sent")
+                }
+
+                val id = db.insert("communications", null, values)
+                db.close()
+
+                if (id > 0) {
+                    Log.d(TAG, "Communication logged: $type to $recipient")
+                } else {
+                    Log.e(TAG, "Failed to log communication")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error logging communication", e)
+            }
+        }
+    }
+}

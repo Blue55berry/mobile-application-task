@@ -162,7 +162,7 @@ class SettingsScreenState extends State<SettingsScreen> {
                   'Manage quotes and invoices for leads',
                   Icons.receipt_long,
                   () {
-                    Navigator.pushNamed(context, '/quotations');
+                    Navigator.pushNamed(context, '/business_menu');
                   },
                 ),
               ]),
