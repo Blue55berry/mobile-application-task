@@ -1101,10 +1101,10 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
       return;
     }
 
-    final Uri phoneUri = Uri(scheme: 'tel', path: phoneNumber);
-    if (await canLaunchUrl(phoneUri)) {
-      await launchUrl(phoneUri);
-    } else {
+    try {
+      final Uri phoneUri = Uri(scheme: 'tel', path: phoneNumber);
+      await launchUrl(phoneUri, mode: LaunchMode.externalApplication);
+    } catch (e) {
       _showSnackBar('Could not launch phone app');
     }
   }
@@ -1116,14 +1116,14 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
       return;
     }
 
-    final Uri emailUri = Uri(
-      scheme: 'mailto',
-      path: email,
-      query: 'subject=Hi ${_lead.name}',
-    );
-    if (await canLaunchUrl(emailUri)) {
-      await launchUrl(emailUri);
-    } else {
+    try {
+      final Uri emailUri = Uri(
+        scheme: 'mailto',
+        path: email,
+        query: 'subject=Hi ${_lead.name}',
+      );
+      await launchUrl(emailUri, mode: LaunchMode.externalApplication);
+    } catch (e) {
       _showSnackBar('Could not launch email app');
     }
   }
@@ -1135,10 +1135,10 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
       return;
     }
 
-    final Uri smsUri = Uri(scheme: 'sms', path: phoneNumber);
-    if (await canLaunchUrl(smsUri)) {
-      await launchUrl(smsUri);
-    } else {
+    try {
+      final Uri smsUri = Uri(scheme: 'sms', path: phoneNumber);
+      await launchUrl(smsUri, mode: LaunchMode.externalApplication);
+    } catch (e) {
       _showSnackBar('Could not launch SMS app');
     }
   }
