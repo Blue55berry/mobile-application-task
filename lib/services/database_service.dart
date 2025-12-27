@@ -27,7 +27,7 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), dbName);
     return await openDatabase(
       path,
-      version: 11, // Incremented for communications table
+      version: 13, // Incremented for companies table
       onCreate: (db, version) async {
         // Create leads table
         await db.execute('''CREATE TABLE leads(
@@ -44,7 +44,8 @@ class DatabaseService {
             assignedDate TEXT,
             assignedTime TEXT,
             isVip INTEGER DEFAULT 0,
-            source TEXT DEFAULT 'crm'
+            source TEXT DEFAULT 'crm',
+            photoUrl TEXT
           )''');
 
         // Create call history table
@@ -219,6 +220,22 @@ class DatabaseService {
             referenceNumber TEXT,
             notes TEXT,
             FOREIGN KEY (invoiceId) REFERENCES invoices (id) ON DELETE CASCADE
+          )''');
+
+        // Create companies table
+        await db.execute('''CREATE TABLE companies(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            type TEXT,
+            industry TEXT,
+            email TEXT,
+            phone TEXT,
+            website TEXT,
+            address TEXT,
+            logo TEXT,
+            member_count INTEGER DEFAULT 1,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL
           )''');
 
         // Create index on phone number for faster lookups
@@ -434,6 +451,28 @@ class DatabaseService {
               status TEXT NOT NULL,
               metadata TEXT,
               FOREIGN KEY (leadId) REFERENCES leads (id) ON DELETE CASCADE
+            )''');
+        }
+
+        if (oldVersion < 12) {
+          // Add photoUrl column to leads table
+          await db.execute("ALTER TABLE leads ADD COLUMN photoUrl TEXT");
+        }
+        if (oldVersion < 13) {
+          // Add companies table when upgrading to version 13
+          await db.execute('''CREATE TABLE IF NOT EXISTS companies(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              type TEXT,
+              industry TEXT,
+              email TEXT,
+              phone TEXT,
+              website TEXT,
+              address TEXT,
+              logo TEXT,
+              member_count INTEGER DEFAULT 1,
+              is_active INTEGER DEFAULT 1,
+              created_at TEXT NOT NULL
             )''');
         }
       },

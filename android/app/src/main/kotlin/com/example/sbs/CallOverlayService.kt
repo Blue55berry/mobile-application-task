@@ -33,7 +33,8 @@ data class Lead(
     val email: String?,
     val category: String,
     val status: String,
-    val isVip: Boolean
+    val isVip: Boolean,
+    val photoUrl: String? = null
 )
 
 class CallOverlayService : Service() {
@@ -73,6 +74,10 @@ class CallOverlayService : Service() {
     
     // Wake lock to keep service alive
     private var wakeLock: PowerManager.WakeLock? = null
+    
+    // Call tracking for incoming calls
+    private var callStartTime: Long = 0
+    private var isIncomingCall = false
 
     private val callDetectorCallback = object : PhoneCallDetector.CallStateCallback {
         override fun onIncomingCall(phoneNumber: String?) {
@@ -269,8 +274,16 @@ class CallOverlayService : Service() {
             return
         }
         
-        // Show floating icon immediately
-        showFloatingIcon()
+        // Show floating icon immediately with error handling
+        try {
+            showFloatingIcon()
+            Log.d(TAG, "✅ Floating icon shown for incoming call")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error showing floating icon", e)
+        }
+        
+        // Mark as incoming call for tracking
+        isIncomingCall = true
         
         // Query lead FIRST, then show correct popup (no flash!)
         queryLeadAndShowOverlay(phoneNumber, isIncoming = true)
@@ -293,7 +306,12 @@ class CallOverlayService : Service() {
             return
         }
         
-        showFloatingIcon()
+        try {
+            showFloatingIcon()
+            Log.d(TAG, "✅ Floating icon shown for outgoing call")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error showing floating icon", e)
+        }
         
         queryLeadAndShowOverlay(phoneNumber, isIncoming = false)
         updateNotification("Outgoing call: ${phoneNumber ?: "Unknown"}")
@@ -301,16 +319,79 @@ class CallOverlayService : Service() {
 
     private fun handleCallStarted() {
         Log.d(TAG, "📞 Call started")
+        // Record call start time for duration calculation
+        callStartTime = System.currentTimeMillis()
         updateNotification("Call in progress")
     }
 
     private fun handleCallEnded() {
         Log.d(TAG, "📞 Call ended")
+        
+        // Track and log incoming calls only
+        if (isIncomingCall && currentPhoneNumber != null && callStartTime > 0) {
+            val durationSeconds = ((System.currentTimeMillis() - callStartTime) / 1000).toInt()
+            logIncomingCall(currentPhoneNumber!!, durationSeconds)
+        }
+        
+        // Check for missed call auto-reply
+        if (isIncomingCall && currentPhoneNumber != null) {
+            checkAndSendAutoReply(currentPhoneNumber!!)
+        }
+
+        // Keep popup visible if it contains saved data, only remove floating icon
         removeFloatingIcon()
-        removePopup()
-        currentPhoneNumber = null
-        currentLead = null
-        updateNotification("Monitoring calls...")
+        
+        // Don't remove popup - let user manually close it to review saved details
+        // removePopup() - COMMENTED OUT to keep popup visible
+        
+        // Reset call tracking
+        isIncomingCall = false
+        callStartTime = 0
+        updateNotification("Call ended - Review details")
+    }
+
+    private fun logIncomingCall(phoneNumber: String, durationSeconds: Int) {
+        Log.d(TAG, "📊 Logging incoming call: $phoneNumber, duration: ${durationSeconds}s")
+        logCommunication(
+            type = "call",
+            direction = "inbound",
+            recipient = phoneNumber,
+            subject = "Incoming Call",
+            body = "Duration: ${durationSeconds}s",
+            metadata = "duration:$durationSeconds"
+        )
+    }
+
+    private fun checkAndSendAutoReply(phoneNumber: String) {
+        val prefs = getSharedPreferences("sbs_prefs", Context.MODE_PRIVATE)
+        val isEnabled = prefs.getBoolean("auto_messages_enabled", false)
+        val message = prefs.getString("auto_message_text", "Thanks for calling! I'll get back to you soon.") ?: ""
+        
+        if (isEnabled && message.isNotEmpty()) {
+            try {
+                val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    this.getSystemService(android.telephony.SmsManager::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    android.telephony.SmsManager.getDefault()
+                }
+                
+                smsManager.sendTextMessage(phoneNumber, null, message, null, null)
+                Log.d(TAG, "✅ Auto-reply sent to $phoneNumber")
+                
+                // Log the automatic message with metadata
+                logCommunication(
+                    type = "sms",
+                    direction = "outbound",
+                    recipient = phoneNumber,
+                    subject = "Automatic Reply",
+                    body = message,
+                    metadata = "automatic:true"
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Failed to send auto-reply", e)
+            }
+        }
     }
 
     private fun queryLeadAndShowOverlay(phoneNumber: String?, isIncoming: Boolean) {
@@ -534,7 +615,8 @@ class CallOverlayService : Service() {
                             email = cursor.getColumnIndex("email").let { if (it >= 0) cursor.getString(it) else null },
                             category = if (categoryIndex >= 0) cursor.getString(categoryIndex) ?: "General" else "General",
                             status = cursor.getColumnIndex("status").let { if (it >= 0) cursor.getString(it) ?: "New" else "New" },
-                            isVip = cursor.getColumnIndex("isVip").let { if (it >= 0) cursor.getInt(it) == 1 else false }
+                            isVip = cursor.getColumnIndex("isVip").let { if (it >= 0) cursor.getInt(it) == 1 else false },
+                            photoUrl = cursor.getColumnIndex("photoUrl").let { if (it >= 0) cursor.getString(it) else null }
                         )
                         Log.d(TAG, "✅ FOUND exact match: ${lead.name} (ID: ${lead.id})")
                         break
@@ -599,6 +681,9 @@ class CallOverlayService : Service() {
         
         val frameLayout = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(iconSize, iconSize)
+            alpha = 0.5f // Start in idle state
+            scaleX = 0.7f
+            scaleY = 0.7f
         }
 
         // Outer glow/shadow layer
@@ -653,6 +738,9 @@ class CallOverlayService : Service() {
 
             when (event.action) {
                 android.view.MotionEvent.ACTION_DOWN -> {
+                    // Update state to active
+                    frameLayout.animate().scaleX(1.0f).scaleY(1.0f).alpha(1.0f).setDuration(200).start()
+                    
                     initialX = params?.x ?: 0
                     initialY = params?.y ?: 0
                     initialTouchX = event.rawX
@@ -673,6 +761,9 @@ class CallOverlayService : Service() {
                     true
                 }
                 android.view.MotionEvent.ACTION_UP -> {
+                    // Update state back to idle
+                    frameLayout.animate().scaleX(0.7f).scaleY(0.7f).alpha(0.5f).setDuration(200).start()
+
                     if (!isDragging) {
                         // Only show popup if query is complete to avoid stale data
                         if (isQueryComplete) {
@@ -686,6 +777,12 @@ class CallOverlayService : Service() {
                             // Query still in progress, show popup will be triggered when complete
                         }
                     }
+                    isDragging = false
+                    true
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    // Return to idle state if cancelled
+                    frameLayout.animate().scaleX(0.7f).scaleY(0.7f).alpha(0.5f).setDuration(200).start()
                     isDragging = false
                     true
                 }
@@ -829,24 +926,49 @@ class CallOverlayService : Service() {
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        // Compact Avatar with Letter (Left)
+        // Compact Avatar with Photo or Letter (Left)
         val avatarSize = (48 * density).toInt()
-        val avatar = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(avatarSize, avatarSize)
-            text = (currentLead?.name?.firstOrNull()?.uppercase() ?: "?")
-            gravity = Gravity.CENTER
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                colors = intArrayOf(
-                    Color.parseColor("#8B5CF6"),
-                    Color.parseColor("#EC4899")
-                )
+        val avatarView = if (currentLead?.photoUrl != null) {
+            ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(avatarSize, avatarSize)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                try {
+                    setImageURI(Uri.parse(currentLead?.photoUrl))
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading contact photo", e)
+                }
+                // Apply circular clip if possible, or just rounded corners via background
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    colors = intArrayOf(Color.parseColor("#8B5CF6"), Color.parseColor("#EC4899"))
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    clipToOutline = true
+                    outlineProvider = object : ViewOutlineProvider() {
+                        override fun getOutline(view: View, outline: android.graphics.Outline) {
+                            outline.setOval(0, 0, view.width, view.height)
+                        }
+                    }
+                }
+            }
+        } else {
+            TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(avatarSize, avatarSize)
+                text = (currentLead?.name?.firstOrNull()?.uppercase() ?: "?")
+                gravity = Gravity.CENTER
+                textSize = 20f
+                setTextColor(Color.WHITE)
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    colors = intArrayOf(
+                        Color.parseColor("#8B5CF6"),
+                        Color.parseColor("#EC4899")
+                    )
+                }
             }
         }
-        headerLayout.addView(avatar)
+        headerLayout.addView(avatarView)
 
         // Contact Info (Center)
         val infoLayout = LinearLayout(this).apply {
@@ -885,7 +1007,7 @@ class CallOverlayService : Service() {
                 }
                 text = phoneNumber
                 textSize = 13f
-                setTextColor(Color.parseColor("#A78BFA"))
+                setTextColor(Color.parseColor("#E0E0E0")) // Light gray instead of purple for better visibility
                 typeface = android.graphics.Typeface.MONOSPACE
                 maxLines = 1
             })
@@ -1039,7 +1161,7 @@ class CallOverlayService : Service() {
             }
             text = "Add Label +"
             textSize = 15f // Slightly larger
-            setTextColor(Color.parseColor("#6C5CE7"))
+            setTextColor(Color.WHITE) // Changed from purple to white for better visibility
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             setPadding((20 * density).toInt(), (12 * density).toInt(), (20 * density).toInt(), (12 * density).toInt()) // Larger touch target
             background = GradientDrawable().apply {
@@ -1053,89 +1175,6 @@ class CallOverlayService : Service() {
         }
         cardView.addView(addLabelButton)
 
-        // ===== DROPDOWNS SECTION =====
-        val dropdownsContainer = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = (8 * density).toInt()
-            }
-            orientation = LinearLayout.HORIZONTAL
-        }
-
-        // Move to... dropdown
-        val moveToButton = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            ).apply {
-                setMargins(0, 0, (8 * density).toInt(), 0)
-            }
-            text = "Move to... ▼"
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            setPadding((12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt())
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#2D2D4A")) // Dark purple background
-                cornerRadius = 8 * density
-            }
-            setOnClickListener { view ->
-                showStatusDropdown(view, this)
-            }
-        }
-        dropdownsContainer.addView(moveToButton)
-
-        // Assigned to dropdown
-        val assignedToButton = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            ).apply {
-                setMargins((8 * density).toInt(), 0, 0, 0)
-            }
-            text = "Assigned to ▼"
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            setPadding((12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt())
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#2D2D4A")) // Dark purple background
-                cornerRadius = 8 * density
-            }
-            setOnClickListener {
-                showTeamMemberSelector(this)
-            }
-        }
-        dropdownsContainer.addView(assignedToButton)
-
-        cardView.addView(dropdownsContainer)
-
-        // ===== CREATE MEETING BUTTON =====
-        val createMeetingButton = Button(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = (16 * density).toInt()
-            }
-            text = "📅 Create Meeting"
-            textSize = 15f // Larger
-            setTextColor(Color.WHITE)
-            setPadding(0, (16 * density).toInt(), 0, (16 * density).toInt()) // More prominent
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#2D2D4A")) // Dark purple background
-                cornerRadius = 8 * density
-                setStroke((1 * density).toInt(), Color.parseColor("#DDDDDD"))
-            }
-            setOnClickListener {
-                showCreateMeetingDialog()
-            }
-        }
-        cardView.addView(createMeetingButton)
 
         // ===== AUTOMATIC MESSAGES SECTION =====
         val autoMessagesContainer = LinearLayout(this).apply {
@@ -1181,7 +1220,7 @@ class CallOverlayService : Service() {
             )
             text = "⚙"
             textSize = 18f
-            setTextColor(Color.parseColor("#AAAAAA"))
+            setTextColor(Color.WHITE) // Changed from gray to white for better visibility
             setOnClickListener {
                 Log.d(TAG, "Auto messages settings clicked")
             }
@@ -1199,7 +1238,7 @@ class CallOverlayService : Service() {
             }
             text = "Send an automatic reply to missed calls and greet new customers with your custom message."
             textSize = 13f
-            setTextColor(Color.parseColor("#AAAAAA"))
+            setTextColor(Color.parseColor("#E0E0E0")) // Light gray instead of dark gray for visibility
         })
 
         // Turn On button
@@ -1232,44 +1271,22 @@ class CallOverlayService : Service() {
             orientation = LinearLayout.HORIZONTAL
         }
 
-        // Edit Lead button
-        val editButton = Button(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            ).apply {
-                setMargins(0, 0, (4 * density).toInt(), 0)
-            }
-            text = "✏️ EDIT"
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#6C5CE7"))
-                cornerRadius = 8 * density
-            }
-            setOnClickListener {
-                removePopup()
-                notifyFlutterEditLead(currentLead?.id ?: 0)
-            }
-        }
-        actionsRow.addView(editButton)
-
-        // SAVE button (NEW)
+        // SAVE button
         val saveButton = Button(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 1f
             ).apply {
-                setMargins((4 * density).toInt(), 0, (4 * density).toInt(), 0)
+                rightMargin = (4 * density).toInt()
             }
             text = "💾 SAVE"
-            textSize = 12f
+            textSize = 14f
             setTextColor(Color.WHITE)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#4CAF50")) // Green for save
-                cornerRadius = 8 * density
+                setColor(Color.parseColor("#4CAF50"))
+                cornerRadius = 12 * density
             }
             setOnClickListener {
                 saveContactToDatabase()
@@ -1285,14 +1302,15 @@ class CallOverlayService : Service() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 1f
             ).apply {
-                setMargins((4 * density).toInt(), 0, 0, 0)
+                leftMargin = (4 * density).toInt()
             }
             text = "✓ TASK"
-            textSize = 12f
+            textSize = 14f
             setTextColor(Color.WHITE)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#00BCD4"))
-                cornerRadius = 8 * density
+                cornerRadius = 12 * density
             }
             setOnClickListener {
                 showCreateTaskDialog()
@@ -2207,11 +2225,13 @@ class CallOverlayService : Service() {
         direction: String,
         recipient: String?,
         subject: String?,
-        body: String?
+        body: String?,
+        metadata: String? = null
     ) {
         GlobalScope.launch(Dispatchers.IO) {
             try {
-                val leadId = currentLead?.id ?: return@launch
+                val leadId = currentLead?.id ?: 0 // Store even if ID is 0
+                if (leadId == 0 && recipient == null) return@launch
                 
                 val dbPath = getDatabasePath("sbs_database.db")
                 if (!dbPath.exists()) {
@@ -2238,13 +2258,14 @@ class CallOverlayService : Service() {
                     }
                     put("timestamp", System.currentTimeMillis())
                     put("status", "sent")
+                    if (metadata != null) put("metadata", metadata)
                 }
 
                 val id = db.insert("communications", null, values)
                 db.close()
 
                 if (id > 0) {
-                    Log.d(TAG, "Communication logged: $type to $recipient")
+                    Log.d(TAG, "Communication logged: $type to $recipient (Auto: ${metadata != null})")
                 } else {
                     Log.e(TAG, "Failed to log communication")
                 }

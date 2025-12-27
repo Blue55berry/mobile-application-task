@@ -382,62 +382,34 @@ class PdfService {
     required String fileName,
   }) async {
     try {
-      // Get the app documents directory for sharing
-      // This is accessible via FileProvider for cross-app sharing
-      Directory? output;
-      if (Platform.isAndroid) {
-        output = await getApplicationDocumentsDirectory();
-        debugPrint('📂 Using app documents: ${output.path}');
-      } else {
-        output = await getTemporaryDirectory();
-      }
-
+      // Use temporary directory for sharing - highly recommended for Android
+      // Private app directories can cause issues with other apps accessing the file
+      final output = await getTemporaryDirectory();
       final file = File('${output.path}/$fileName.pdf');
 
-      // Write PDF to file with explicit flush
+      // Write PDF to file
       final bytes = await pdf.save();
-      debugPrint('📄 Generated PDF: ${bytes.length} bytes');
+      await file.writeAsBytes(bytes, flush: true);
 
-      final randomAccessFile = await file.open(mode: FileMode.write);
-      await randomAccessFile.writeFrom(bytes);
-      await randomAccessFile.flush();
-      await randomAccessFile.close();
+      debugPrint('✅ PDF saved to: ${file.path} (${bytes.length} bytes)');
 
-      debugPrint('✅ PDF saved to: ${file.path}');
-
-      // Verify file exists and is readable
+      // Verify file exists
       if (!await file.exists()) {
         throw Exception('PDF file was not created successfully');
       }
 
-      final fileSize = await file.length();
-      debugPrint('📁 File size on disk: $fileSize bytes');
-
-      // Try to share the file
+      // Share the file
       debugPrint('📤 Attempting to share PDF...');
-      try {
-        final result = await Share.shareXFiles(
-          [XFile(file.path, mimeType: 'application/pdf')],
-          subject: fileName,
-          text: 'Quotation from SBS CRM',
-        );
+      final result = await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/pdf')],
+        subject: fileName,
+        text: 'Quotation from SBS CRM',
+      );
 
-        debugPrint('✅ Share result: ${result.status}');
-
-        // If share was dismissed, that's still OK
-        if (result.status == ShareResultStatus.dismissed) {
-          debugPrint('ℹ️ User dismissed share dialog');
-        } else if (result.status == ShareResultStatus.success) {
-          debugPrint('✅ PDF shared successfully');
-        }
-      } catch (shareError) {
-        debugPrint('❌ Share error: $shareError');
-        // Re-throw so the UI can show the error
-        throw Exception('Failed to open share dialog: $shareError');
-      }
+      debugPrint('✅ Share result: ${result.status}');
     } catch (e) {
-      debugPrint('❌ PDF error: $e');
-      throw Exception('Failed to save PDF: $e');
+      debugPrint('❌ PDF sharing error: $e');
+      throw Exception('Failed to share PDF: $e');
     }
   }
 
@@ -447,28 +419,20 @@ class PdfService {
     required String fileName,
   }) async {
     try {
-      // Save PDF to external storage first
-      Directory output;
-      if (Platform.isAndroid) {
-        final externalDir = await getExternalStorageDirectory();
-        output = externalDir ?? await getTemporaryDirectory();
-      } else {
-        output = await getTemporaryDirectory();
-      }
-
+      final output = await getTemporaryDirectory();
       final file = File('${output.path}/$fileName.pdf');
+
       final bytes = await pdf.save();
-      await file.writeAsBytes(bytes);
+      await file.writeAsBytes(bytes, flush: true);
 
       debugPrint('✅ PDF saved for preview: ${file.path}');
 
-      // Open PDF with default viewer using share
-      // This is more reliable than Printing.layoutPdf on Android
+      // shareXFiles is the most reliable way to open a PDF in an external viewer on Android
       await Share.shareXFiles([
         XFile(file.path, mimeType: 'application/pdf'),
       ], subject: fileName);
 
-      debugPrint('✅ PDF preview opened');
+      debugPrint('✅ PDF preview triggered');
     } catch (e) {
       debugPrint('❌ Preview error: $e');
       throw Exception('Failed to preview PDF: $e');

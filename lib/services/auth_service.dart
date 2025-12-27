@@ -15,7 +15,8 @@ class AuthService extends ChangeNotifier {
     scopes: [
       'email',
       'profile',
-      'https://www.googleapis.com/auth/contacts.readonly',
+      // Removed contacts.readonly to avoid "unverified app" warning
+      // User's Google profile photo still works with just email + profile scopes
     ],
   );
 
@@ -68,7 +69,6 @@ class AuthService extends ChangeNotifier {
   bool get isSignedIn => _currentUser != null;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  GoogleSignIn get googleSignIn => _googleSignIn; // For GoogleContactsService
 
   /// Initialize service and restore session
   Future<void> initialize() async {

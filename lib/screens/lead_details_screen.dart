@@ -4,6 +4,7 @@ import 'package:intl/intl.dart'; // Add intl for dates
 import '../models/lead_model.dart';
 import '../models/call_history_model.dart';
 import '../models/task_model.dart';
+import '../models/communication_model.dart';
 import '../services/database_service.dart';
 import '../services/label_service.dart';
 import '../services/task_service.dart';
@@ -72,6 +73,14 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
             ),
           );
         }
+      }
+
+      // 4. Fetch Communications
+      final comms = await _dbService.getCommunicationsForLead(leadId);
+      for (var comm in comms) {
+        _timelineItems.add(
+          TimelineItem(date: comm.timestamp, type: 'communication', data: comm),
+        );
       }
 
       // Sort by date (newest first)
@@ -657,6 +666,14 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
         title = 'Note';
         subtitle = note['content'];
         break;
+      case 'communication':
+        final comm = item.data as Communication;
+        final isAuto = comm.metadata?['automatic'] == 'true';
+        icon = _getCommIcon(comm.type);
+        color = _getCommColor(comm.type);
+        title = '${comm.type.toUpperCase()} ${comm.direction}';
+        subtitle = '${comm.body ?? ""}${isAuto ? " (Auto-reply)" : ""}';
+        break;
       default:
         icon = Icons.circle;
         color = Colors.grey;
@@ -706,12 +723,64 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(subtitle, style: const TextStyle(color: Colors.grey)),
+                if (item.type == 'communication')
+                  _buildCommAction(item.data as Communication),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildCommAction(Communication comm) {
+    final isAuto = comm.metadata?['automatic'] == 'true';
+    if (!isAuto) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8.0),
+      child: ElevatedButton.icon(
+        onPressed: () => _makePhoneCall(_lead.phoneNumber),
+        icon: const Icon(Icons.call, size: 16),
+        label: const Text('Call Back', style: TextStyle(fontSize: 12)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF6C5CE7),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
+    );
+  }
+
+  IconData _getCommIcon(String type) {
+    switch (type) {
+      case 'call':
+        return Icons.call;
+      case 'sms':
+        return Icons.sms;
+      case 'email':
+        return Icons.email;
+      case 'whatsapp':
+        return Icons.chat;
+      default:
+        return Icons.message;
+    }
+  }
+
+  Color _getCommColor(String type) {
+    switch (type) {
+      case 'call':
+        return Colors.green;
+      case 'sms':
+        return Colors.blue;
+      case 'email':
+        return Colors.orange;
+      case 'whatsapp':
+        return Colors.teal;
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _buildTasksTab() {
@@ -895,6 +964,8 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
             onPressed: () {
               if (label == 'Call') {
                 _makePhoneCall(_lead.phoneNumber);
+              } else if (label == 'Message') {
+                _sendSMS(_lead.phoneNumber);
               } else if (label == 'Email') {
                 _sendEmail(_lead.email);
               } else if (label == 'Meeting') {
@@ -1051,6 +1122,21 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
       await launchUrl(emailUri);
     } else {
       _showSnackBar('Could not launch email app');
+    }
+  }
+
+  // SMS functionality
+  Future<void> _sendSMS(String? phoneNumber) async {
+    if (phoneNumber == null || phoneNumber.isEmpty) {
+      _showSnackBar('No phone number available');
+      return;
+    }
+
+    final Uri smsUri = Uri(scheme: 'sms', path: phoneNumber);
+    if (await canLaunchUrl(smsUri)) {
+      await launchUrl(smsUri);
+    } else {
+      _showSnackBar('Could not launch SMS app');
     }
   }
 

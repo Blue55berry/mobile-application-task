@@ -22,6 +22,8 @@ class _CallDetailsPopupState extends State<CallDetailsPopup>
   final TextEditingController _noteController = TextEditingController();
   final DatabaseService _dbService = DatabaseService();
   int _noteLength = 0;
+  String? _photoUrl;
+  final bool _isFetchingPhoto = false;
 
   @override
   void initState() {
@@ -32,6 +34,7 @@ class _CallDetailsPopupState extends State<CallDetailsPopup>
         _noteLength = _noteController.text.length;
       });
     });
+    // Photo fetching removed - using local contact photos from database
   }
 
   @override
@@ -106,19 +109,40 @@ class _CallDetailsPopupState extends State<CallDetailsPopup>
             children: [
               Stack(
                 children: [
-                  CircleAvatar(
-                    radius: 30,
-                    backgroundColor: const Color(0xFF6C5CE7),
-                    child: Text(
-                      widget.lead.name.isNotEmpty
-                          ? widget.lead.name[0].toUpperCase()
-                          : '?',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundColor: const Color(0xFF6C5CE7),
+                        backgroundImage: _photoUrl != null
+                            ? NetworkImage(_photoUrl!)
+                            : null,
+                        child: _photoUrl == null && !_isFetchingPhoto
+                            ? Text(
+                                widget.lead.name.isNotEmpty
+                                    ? widget.lead.name[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            : null,
                       ),
-                    ),
+                      if (_isFetchingPhoto)
+                        const SizedBox(
+                          width: 60,
+                          height: 60,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   if (widget.lead.isVip)
                     Positioned(
@@ -199,16 +223,19 @@ class _CallDetailsPopupState extends State<CallDetailsPopup>
       child: Row(
         children: [
           Expanded(
-            child: OutlinedButton.icon(
+            child: ElevatedButton.icon(
               onPressed: () {
-                _showMoveToDialog();
+                _saveNote();
               },
-              icon: const Icon(Icons.drive_file_move, size: 18),
-              label: const Text('Move to...'),
-              style: OutlinedButton.styleFrom(
+              icon: const Icon(Icons.save, size: 18),
+              label: const Text('Save'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6C5CE7),
                 foregroundColor: Colors.white,
-                side: const BorderSide(color: Colors.grey),
                 padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
           ),
@@ -216,19 +243,28 @@ class _CallDetailsPopupState extends State<CallDetailsPopup>
           Expanded(
             child: OutlinedButton.icon(
               onPressed: () {
-                _showCreateMeetingDialog();
+                _showCreateTaskDialog();
               },
-              icon: const Icon(Icons.event, size: 18),
-              label: const Text('Create Meeting'),
+              icon: const Icon(Icons.task_alt, size: 18),
+              label: const Text('Task'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.white,
                 side: const BorderSide(color: Colors.grey),
                 padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  void _showCreateTaskDialog() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Task creation feature coming soon!')),
     );
   }
 
@@ -453,65 +489,5 @@ class _CallDetailsPopupState extends State<CallDetailsPopup>
     );
 
     _noteController.clear();
-  }
-
-  void _showMoveToDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF2A2A3E),
-        title: const Text(
-          'Move to Category',
-          style: TextStyle(color: Colors.white),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildCategoryOption('Jobs', 'jobs'),
-            _buildCategoryOption('Internship', 'internship'),
-            _buildCategoryOption('Paid Internship', 'paid_internship'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCategoryOption(String label, String value) {
-    return ListTile(
-      title: Text(label, style: const TextStyle(color: Colors.white)),
-      onTap: () async {
-        final updatedLead = widget.lead.copyWith(category: value);
-        await _dbService.updateLead(updatedLead);
-
-        if (!mounted) return;
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Moved to $label')));
-      },
-    );
-  }
-
-  void _showCreateMeetingDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF2A2A3E),
-        title: const Text(
-          'Create Meeting',
-          style: TextStyle(color: Colors.white),
-        ),
-        content: const Text(
-          'Meeting scheduling feature coming soon!',
-          style: TextStyle(color: Colors.grey),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK', style: TextStyle(color: Color(0xFF6C5CE7))),
-          ),
-        ],
-      ),
-    );
   }
 }

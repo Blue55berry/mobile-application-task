@@ -10,6 +10,7 @@ import 'screens/login_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/enhanced_onboarding_screen.dart';
 import 'screens/lead_details_screen.dart';
+import 'screens/companies_screen.dart';
 import 'screens/quotations_screen.dart';
 import 'screens/create_quotation_screen.dart';
 import 'screens/quotation_details_screen.dart';
@@ -27,7 +28,8 @@ import 'services/auth_service.dart';
 import 'services/team_service.dart';
 import 'services/quotation_service.dart';
 import 'services/invoice_service.dart';
-import 'services/google_contacts_service.dart';
+import 'services/subscription_service.dart';
+import 'services/company_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'utils/theme.dart';
@@ -193,15 +195,10 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TaskService()),
         ChangeNotifierProvider(create: (_) => LabelService()),
         ChangeNotifierProvider(create: (_) => TeamService()),
+        ChangeNotifierProvider(create: (_) => SubscriptionService()),
+        ChangeNotifierProvider(create: (_) => CompanyService()),
         ChangeNotifierProvider(create: (_) => QuotationService()),
         ChangeNotifierProvider(create: (_) => InvoiceService()),
-        ChangeNotifierProxyProvider<AuthService, GoogleContactsService>(
-          create: (context) =>
-              GoogleContactsService(context.read<AuthService>().googleSignIn),
-          update: (context, authService, contactsService) =>
-              contactsService ??
-              GoogleContactsService(authService.googleSignIn),
-        ),
         ChangeNotifierProxyProvider<TaskService, LeadsService>(
           create: (context) => LeadsService(context.read<TaskService>()),
           update: (context, taskService, leadsService) =>
@@ -231,24 +228,19 @@ class MyApp extends StatelessWidget {
 
               // Initialize AuthService to restore user session
               final authService = context.read<AuthService>();
-              authService.initialize().then((_) {
-                // Initialize Google Contacts after auth (with mounted check)
-                if (authService.isSignedIn &&
-                    navigatorKey.currentContext != null) {
-                  try {
-                    final contactsService = navigatorKey.currentContext!
-                        .read<GoogleContactsService>();
-                    contactsService.initialize();
-                    debugPrint('📸 Google Contacts service initialized');
-                  } catch (e) {
-                    debugPrint('⚠️ Could not initialize contacts service: $e');
-                  }
-                }
-              });
+              authService.initialize();
 
               // Initialize TeamService
               final teamService = context.read<TeamService>();
               teamService.initialize();
+
+              // Initialize SubscriptionService
+              final subscriptionService = context.read<SubscriptionService>();
+              subscriptionService.initialize();
+
+              // Initialize CompanyService
+              final companyService = context.read<CompanyService>();
+              companyService.initialize();
             }
           });
 
@@ -261,6 +253,9 @@ class MyApp extends StatelessWidget {
                 darkTheme: AppTheme.darkTheme,
                 themeMode: ThemeMode.system,
                 debugShowCheckedModeBanner: false,
+                showPerformanceOverlay: false,
+                showSemanticsDebugger: false,
+                debugShowMaterialGrid: false,
                 // Show onboarding if first launch, login if not signed in, otherwise dashboard
                 home: FutureBuilder<bool>(
                   future: _checkOnboardingComplete(),
@@ -354,6 +349,8 @@ class MyApp extends StatelessWidget {
                   if (settings.name == '/lead_details') {
                     final lead = settings.arguments as Lead;
                     page = LeadDetailScreen(lead: lead);
+                  } else if (settings.name == '/companies') {
+                    page = const CompaniesScreen();
                   } else {
                     // Handle named routes
                     page = _getPageForRoute(settings.name ?? '/dashboard');

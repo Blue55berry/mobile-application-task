@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/label_service.dart';
+import '../services/subscription_service.dart';
 import '../models/user_model.dart';
 import '../models/label_model.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../widgets/profile_header.dart';
 import 'company_profile_screen.dart';
+import 'subscription_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -63,6 +65,108 @@ class SettingsScreenState extends State<SettingsScreen> {
                   },
                 ),
               ]),
+
+              const SizedBox(height: 24),
+
+              // Subscription Section
+              Consumer<SubscriptionService>(
+                builder: (context, subscriptionService, child) {
+                  final currentPlan = subscriptionService.currentPlan;
+                  final isPremium = subscriptionService.isPremium;
+
+                  return _buildSettingsSection('Subscription', [
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const SubscriptionScreen(),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          gradient: isPremium
+                              ? LinearGradient(
+                                  colors: [
+                                    const Color(
+                                      0xFF6C5CE7,
+                                    ).withValues(alpha: 0.3),
+                                    const Color(
+                                      0xFF6C5CE7,
+                                    ).withValues(alpha: 0.1),
+                                  ],
+                                )
+                              : null,
+                          color: isPremium
+                              ? null
+                              : const Color(0xFF2A2A3E).withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isPremium
+                                ? const Color(0xFF6C5CE7)
+                                : Colors.transparent,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: isPremium
+                                    ? const Color(0xFF6C5CE7)
+                                    : Colors.grey.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                isPremium
+                                    ? Icons.diamond
+                                    : Icons.workspace_premium,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    currentPlan.name,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    isPremium
+                                        ? '${subscriptionService.daysRemaining} days remaining'
+                                        : 'Upgrade to unlock all features',
+                                    style: TextStyle(
+                                      color: Colors.grey[400],
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              color: isPremium
+                                  ? const Color(0xFF6C5CE7)
+                                  : Colors.grey,
+                              size: 20,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ]);
+                },
+              ),
 
               const SizedBox(height: 24),
 
@@ -136,19 +240,14 @@ class SettingsScreenState extends State<SettingsScreen> {
 
               const SizedBox(height: 24),
 
-              // Team Collaboration Section
-              _buildSettingsSection('Team Collaborations', [
+              // Company Management Section
+              _buildSettingsSection('Company Management', [
                 _buildListTile(
-                  'Setup Team',
-                  'Create company profile and invite members',
-                  Icons.group_add,
+                  'Manage Companies',
+                  'Add, edit, and switch between companies',
+                  Icons.business,
                   () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const CompanyProfileScreen(),
-                      ),
-                    );
+                    Navigator.pushNamed(context, '/companies');
                   },
                 ),
               ]),

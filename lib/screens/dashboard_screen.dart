@@ -8,6 +8,7 @@ import '../widgets/mini_player_bar.dart';
 import '../models/lead_model.dart';
 import '../services/leads_service.dart';
 import '../services/team_service.dart';
+import '../services/company_service.dart';
 import '../services/auth_service.dart';
 import '../models/user_model.dart';
 import 'lead_details_screen.dart'; // Added missing import
@@ -819,33 +820,124 @@ class DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildTeamCard() {
-    return Consumer<TeamService>(
-      builder: (context, teamService, child) {
-        if (!teamService.hasTeamData) {
-          return const SizedBox.shrink();
+    return Consumer<CompanyService>(
+      builder: (context, companyService, child) {
+        // If no companies, show add company prompt
+        if (!companyService.hasCompanies) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Company',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: () => Navigator.pushNamed(context, '/companies'),
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2A2A3E),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: const Color(0xFF6C5CE7).withValues(alpha: 0.3),
+                      style: BorderStyle.solid,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6C5CE7).withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.add_business,
+                          color: Color(0xFF6C5CE7),
+                          size: 32,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Add Your Company',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Tap to create your first company',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.arrow_forward_ios,
+                        color: Color(0xFF6C5CE7),
+                        size: 16,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
         }
+
+        final company = companyService.activeCompany!;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Company Details',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Active Company',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => Navigator.pushNamed(context, '/companies'),
+                  icon: const Icon(
+                    Icons.swap_horiz,
+                    color: Color(0xFF6C5CE7),
+                    size: 18,
+                  ),
+                  label: const Text(
+                    'Switch',
+                    style: TextStyle(color: Color(0xFF6C5CE7)),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             GestureDetector(
-              onTap: () {
-                _showTeamDetails(context, teamService);
-              },
+              onTap: () => Navigator.pushNamed(context, '/companies'),
               child: Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFF2A2A3E), Color(0xFF3A3A4E)],
+                    colors: [Color(0xFF6C5CE7), Color(0xFF5B4CD6)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -857,13 +949,18 @@ class DashboardScreenState extends State<DashboardScreen> {
                       width: 60,
                       height: 60,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF6C5CE7),
+                        color: Colors.white.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(
-                        Icons.business,
-                        color: Colors.white,
-                        size: 32,
+                      child: Center(
+                        child: Text(
+                          company.initials,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -872,56 +969,31 @@ class DashboardScreenState extends State<DashboardScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            teamService.companyName ?? 'My Company',
+                            company.name,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.people,
+                          if (company.type != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              company.type!,
+                              style: const TextStyle(
                                 color: Colors.white70,
-                                size: 16,
+                                fontSize: 14,
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${teamService.memberCount} ${teamService.memberCount == 1 ? "member" : "members"}',
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF6C5CE7).withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        teamService.companyType ?? '',
-                        style: const TextStyle(
-                          color: Color(0xFF6C5CE7),
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
                     const Icon(
                       Icons.arrow_forward_ios,
-                      color: Colors.white54,
+                      color: Colors.white,
                       size: 16,
                     ),
                   ],

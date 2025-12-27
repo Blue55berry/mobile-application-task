@@ -379,10 +379,15 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: _addPayment,
-              icon: const Icon(Icons.add),
-              label: const Text('Add Payment'),
+              icon: const Icon(Icons.add, color: Colors.white),
+              label: const Text(
+                'Add Payment',
+                style: TextStyle(color: Colors.white),
+              ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF6C5CE7),
+                foregroundColor:
+                    Colors.white, // Ensures text and icons are white
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),

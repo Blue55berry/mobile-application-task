@@ -70,14 +70,7 @@ class LeadItem extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        lead.status,
-                        style: const TextStyle(
-                          color: Colors.grey,
-                          fontSize: 12,
-                        ),
-                      ),
+                      // Status text removed per user request
                     ],
                   ),
                   if (lead.assignedDate != null) ...[
@@ -90,11 +83,14 @@ class LeadItem extends StatelessWidget {
                           size: 12,
                         ),
                         const SizedBox(width: 4),
-                        Text(
-                          '${lead.assignedDate!.toLocal()}'.split(' ')[0],
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 12,
+                        Flexible(
+                          child: Text(
+                            '${lead.assignedDate!.toLocal()}'.split(' ')[0],
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (lead.assignedTime != null) ...[
@@ -105,11 +101,14 @@ class LeadItem extends StatelessWidget {
                             size: 12,
                           ),
                           const SizedBox(width: 4),
-                          Text(
-                            lead.assignedTime!,
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 12,
+                          Flexible(
+                            child: Text(
+                              lead.assignedTime!,
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
