@@ -9,6 +9,7 @@ class Company {
   final String? address;
   final String? logo;
   final int memberCount;
+  final List<String> teamMembers; // Email addresses of team members
   final bool isActive;
   final DateTime createdAt;
 
@@ -23,6 +24,7 @@ class Company {
     this.address,
     this.logo,
     this.memberCount = 1,
+    this.teamMembers = const [],
     this.isActive = true,
     required this.createdAt,
   });
@@ -39,6 +41,7 @@ class Company {
     String? address,
     String? logo,
     int? memberCount,
+    List<String>? teamMembers,
     bool? isActive,
     DateTime? createdAt,
   }) {
@@ -53,6 +56,7 @@ class Company {
       address: address ?? this.address,
       logo: logo ?? this.logo,
       memberCount: memberCount ?? this.memberCount,
+      teamMembers: teamMembers ?? this.teamMembers,
       isActive: isActive ?? this.isActive,
       createdAt: createdAt ?? this.createdAt,
     );
@@ -71,6 +75,7 @@ class Company {
       'address': address,
       'logo': logo,
       'member_count': memberCount,
+      'team_members': teamMembers.join(','), // Store as comma-separated string
       'is_active': isActive ? 1 : 0,
       'created_at': createdAt.toIso8601String(),
     };
@@ -89,6 +94,11 @@ class Company {
       address: map['address'],
       logo: map['logo'],
       memberCount: map['member_count'] ?? 1,
+      teamMembers:
+          map['team_members'] != null &&
+              map['team_members'].toString().isNotEmpty
+          ? map['team_members'].toString().split(',')
+          : [],
       isActive: map['is_active'] == 1,
       createdAt: DateTime.parse(map['created_at']),
     );

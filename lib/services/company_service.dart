@@ -98,28 +98,48 @@ class CompanyService extends ChangeNotifier {
   // Update company
   Future<bool> updateCompany(Company company) async {
     try {
+      print(
+        '🔧 CompanyService.updateCompany called for company: ${company.name}',
+      );
+      print('🔧 Company ID: ${company.id}');
+      print('🔧 Team members: ${company.teamMembers}');
+
       final db = await DatabaseService().database;
-      await db.update(
+      print('🔧 Database obtained');
+
+      final companyMap = company.toMap();
+      print('🔧 Company map: $companyMap');
+
+      final rowsAffected = await db.update(
         'companies',
-        company.toMap(),
+        companyMap,
         where: 'id = ?',
         whereArgs: [company.id],
       );
+      print('🔧 Rows affected: $rowsAffected');
 
       final index = _companies.indexWhere((c) => c.id == company.id);
+      print('🔧 Company index in list: $index');
+
       if (index != -1) {
         _companies[index] = company;
 
         // Update active company if it was updated
         if (_activeCompany?.id == company.id) {
           _activeCompany = company;
+          print('🔧 Updated active company');
         }
 
         notifyListeners();
+        print('✅ Company updated successfully');
+      } else {
+        print('⚠️ Company not found in local list');
       }
+
       return true;
-    } catch (e) {
-      debugPrint('Error updating company: $e');
+    } catch (e, stackTrace) {
+      print('❌ Error updating company: $e');
+      print('Stack trace: $stackTrace');
       return false;
     }
   }

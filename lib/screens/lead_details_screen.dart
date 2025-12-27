@@ -806,7 +806,10 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
                     _loadData(); // Refresh timeline
                   },
                   icon: const Icon(Icons.add),
-                  label: const Text('Add Task'),
+                  label: const Text(
+                    'Add Task',
+                    style: TextStyle(color: Colors.white),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF6C5CE7),
                   ),

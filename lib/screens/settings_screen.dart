@@ -7,7 +7,6 @@ import '../models/user_model.dart';
 import '../models/label_model.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../widgets/profile_header.dart';
-import 'company_profile_screen.dart';
 import 'subscription_screen.dart';
 
 class SettingsScreen extends StatefulWidget {

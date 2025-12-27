@@ -432,8 +432,170 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
                     _buildDetailRow(
                       Icons.people,
                       'Members',
-                      '${company.memberCount} ${company.memberCount == 1 ? "member" : "members"}',
+                      '${company.teamMembers.length + 1} ${company.teamMembers.length + 1 == 1 ? "member" : "members"}',
                     ),
+
+                    const SizedBox(height: 32),
+
+                    // Team Members Section
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Team Members',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _showAddTeamMemberDialog(context, company);
+                          },
+                          icon: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: const Color(
+                                0xFF6C5CE7,
+                              ).withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.person_add,
+                              color: Color(0xFF6C5CE7),
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    if (company.teamMembers.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2A2A3E),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              const Icon(
+                                Icons.people_outline,
+                                color: Colors.grey,
+                                size: 48,
+                              ),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'No team members yet',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                              const SizedBox(height: 8),
+                              TextButton.icon(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _showAddTeamMemberDialog(context, company);
+                                },
+                                icon: const Icon(
+                                  Icons.add,
+                                  color: Color(0xFF6C5CE7),
+                                ),
+                                label: const Text(
+                                  'Add Team Member',
+                                  style: TextStyle(color: Color(0xFF6C5CE7)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      ...company.teamMembers.map(
+                        (email) => Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A2A3E),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: const Color(
+                                  0xFF6C5CE7,
+                                ).withValues(alpha: 0.2),
+                                child: Text(
+                                  email[0].toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Color(0xFF6C5CE7),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  email,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () async {
+                                  // Capture service reference before async operations
+                                  final companyService =
+                                      Provider.of<CompanyService>(
+                                        context,
+                                        listen: false,
+                                      );
+                                  final navigator = Navigator.of(context);
+                                  final messenger = ScaffoldMessenger.of(
+                                    context,
+                                  );
+
+                                  final updatedMembers = List<String>.from(
+                                    company.teamMembers,
+                                  );
+                                  updatedMembers.remove(email);
+
+                                  final updatedCompany = company.copyWith(
+                                    teamMembers: updatedMembers,
+                                    memberCount: updatedMembers.length + 1,
+                                  );
+
+                                  await companyService.updateCompany(
+                                    updatedCompany,
+                                  );
+
+                                  if (context.mounted) {
+                                    navigator.pop();
+                                    _showCompanyDetails(
+                                      context,
+                                      updatedCompany,
+                                    );
+                                    messenger.showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Team member removed'),
+                                        backgroundColor: Color(0xFF6C5CE7),
+                                      ),
+                                    );
+                                  }
+                                },
+                                icon: const Icon(
+                                  Icons.remove_circle,
+                                  color: Colors.red,
+                                  size: 20,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
 
                     const SizedBox(height: 32),
 
@@ -522,6 +684,9 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
     final addressController = TextEditingController(
       text: company?.address ?? '',
     );
+    final teamMembersController = TextEditingController(
+      text: company?.teamMembers.join(', ') ?? '',
+    );
 
     showDialog(
       context: context,
@@ -572,6 +737,22 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
                 Icons.location_on,
                 maxLines: 2,
               ),
+              const SizedBox(height: 16),
+              _buildTextField(
+                teamMembersController,
+                'Team Members (comma-separated emails)',
+                Icons.people,
+                maxLines: 3,
+                keyboardType: TextInputType.multiline,
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'Enter Gmail addresses separated by commas or new lines',
+                  style: TextStyle(color: Colors.grey[400], fontSize: 12),
+                ),
+              ),
             ],
           ),
         ),
@@ -600,6 +781,20 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
 
               final companyService = context.read<CompanyService>();
 
+              // Parse team members emails
+              final teamMembersText = teamMembersController.text.trim();
+              List<String> teamMembers = [];
+
+              if (teamMembersText.isNotEmpty) {
+                // Split by comma or newline
+                teamMembers = teamMembersText
+                    .split(RegExp(r'[,\n]'))
+                    .map((e) => e.trim())
+                    .where((e) => e.isNotEmpty && e.contains('@'))
+                    .toSet() // Remove duplicates
+                    .toList();
+              }
+
               final newCompany = Company(
                 id: company?.id,
                 name: nameController.text.trim(),
@@ -621,7 +816,8 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
                 address: addressController.text.trim().isNotEmpty
                     ? addressController.text.trim()
                     : null,
-                memberCount: company?.memberCount ?? 1,
+                teamMembers: teamMembers,
+                memberCount: teamMembers.length + 1, // Owner + team members
                 isActive: company?.isActive ?? true,
                 createdAt: company?.createdAt ?? DateTime.now(),
               );
@@ -699,6 +895,157 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFF6C5CE7)),
         ),
+      ),
+    );
+  }
+
+  void _showAddTeamMemberDialog(BuildContext context, Company company) {
+    final emailController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A3E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Add Team Member',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Enter the Gmail address of the team member',
+              style: TextStyle(color: Colors.grey, fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: emailController,
+              style: const TextStyle(color: Colors.white),
+              keyboardType: TextInputType.emailAddress,
+              decoration: InputDecoration(
+                labelText: 'Email Address',
+                labelStyle: const TextStyle(color: Colors.grey),
+                prefixIcon: const Icon(Icons.email, color: Color(0xFF6C5CE7)),
+                filled: true,
+                fillColor: const Color(0xFF1A1A2E),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFF6C5CE7)),
+                ),
+                hintText: 'example@gmail.com',
+                hintStyle: const TextStyle(color: Colors.grey),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF6C5CE7),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () async {
+              final email = emailController.text.trim();
+              print('🔍 Add Member clicked, email: $email');
+
+              // Capture all needed references from dialogContext before async operations
+              final companyService = Provider.of<CompanyService>(
+                dialogContext,
+                listen: false,
+              );
+              final navigator = Navigator.of(dialogContext);
+              final messenger = ScaffoldMessenger.of(dialogContext);
+
+              // Validate email
+              if (email.isEmpty) {
+                print('❌ Email is empty');
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter an email address'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+
+              if (!email.contains('@') || !email.contains('.')) {
+                print('❌ Invalid email format');
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a valid email address'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+
+              // Check if email already exists
+              if (company.teamMembers.contains(email)) {
+                print('❌ Email already exists in team');
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('This email is already a team member'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+
+              print('✅ Email validated, adding to team...');
+              final updatedMembers = List<String>.from(company.teamMembers);
+              updatedMembers.add(email);
+
+              final updatedCompany = company.copyWith(
+                teamMembers: updatedMembers,
+                memberCount: updatedMembers.length + 1,
+              );
+
+              print(
+                '📝 Updating company with ${updatedMembers.length} members',
+              );
+              final success = await companyService.updateCompany(
+                updatedCompany,
+              );
+              print('✅ Update result: $success');
+
+              if (!dialogContext.mounted) {
+                print('⚠️ Dialog context not mounted');
+                return;
+              }
+
+              navigator.pop();
+              print('🔙 Dialog closed');
+
+              if (context.mounted) {
+                print('📋 Showing company details');
+                _showCompanyDetails(context, updatedCompany);
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('$email added to team'),
+                    backgroundColor: const Color(0xFF6C5CE7),
+                  ),
+                );
+              } else {
+                print('⚠️ Context not mounted after update');
+              }
+            },
+            child: const Text(
+              'Add Member',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -27,7 +27,7 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), dbName);
     return await openDatabase(
       path,
-      version: 13, // Incremented for companies table
+      version: 14, // Incremented for team_members column migration
       onCreate: (db, version) async {
         // Create leads table
         await db.execute('''CREATE TABLE leads(
@@ -234,6 +234,7 @@ class DatabaseService {
             address TEXT,
             logo TEXT,
             member_count INTEGER DEFAULT 1,
+            team_members TEXT,
             is_active INTEGER DEFAULT 1,
             created_at TEXT NOT NULL
           )''');
@@ -471,9 +472,22 @@ class DatabaseService {
               address TEXT,
               logo TEXT,
               member_count INTEGER DEFAULT 1,
+              team_members TEXT,
               is_active INTEGER DEFAULT 1,
               created_at TEXT NOT NULL
             )''');
+        }
+
+        if (oldVersion < 14) {
+          // Add team_members column to companies table
+          try {
+            await db.execute(
+              'ALTER TABLE companies ADD COLUMN team_members TEXT',
+            );
+            print('✅ Added team_members column to companies table');
+          } catch (e) {
+            print('⚠️ team_members column may already exist: $e');
+          }
         }
       },
     );

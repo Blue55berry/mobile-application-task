@@ -7,9 +7,9 @@ import '../widgets/bottom_nav_bar.dart';
 import '../widgets/mini_player_bar.dart';
 import '../models/lead_model.dart';
 import '../services/leads_service.dart';
-import '../services/team_service.dart';
 import '../services/company_service.dart';
 import '../services/auth_service.dart';
+import '../models/company_model.dart';
 import '../models/user_model.dart';
 import 'lead_details_screen.dart'; // Added missing import
 
@@ -272,7 +272,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ] else ...[
                       const Text(
-                        'Welcome to SBS',
+                        'Welcome to SBS CRM',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 24,
@@ -916,18 +916,131 @@ class DashboardScreenState extends State<DashboardScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                TextButton.icon(
-                  onPressed: () => Navigator.pushNamed(context, '/companies'),
-                  icon: const Icon(
-                    Icons.swap_horiz,
-                    color: Color(0xFF6C5CE7),
-                    size: 18,
+                // Company Switcher Dropdown
+                if (companyService.companies.length > 1)
+                  PopupMenuButton<Company>(
+                    color: const Color(0xFF2A2A3E),
+                    icon: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6C5CE7).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(
+                            Icons.swap_horiz,
+                            color: Color(0xFF6C5CE7),
+                            size: 18,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'Switch',
+                            style: TextStyle(
+                              color: Color(0xFF6C5CE7),
+                              fontSize: 14,
+                            ),
+                          ),
+                          SizedBox(width: 4),
+                          Icon(
+                            Icons.arrow_drop_down,
+                            color: Color(0xFF6C5CE7),
+                            size: 18,
+                          ),
+                        ],
+                      ),
+                    ),
+                    onSelected: (Company selectedCompany) async {
+                      await companyService.setActiveCompany(selectedCompany);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Switched to ${selectedCompany.name}',
+                            ),
+                            backgroundColor: const Color(0xFF6C5CE7),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
+                    itemBuilder: (context) => companyService.companies
+                        .where(
+                          (c) => c.id != company.id,
+                        ) // Exclude active company
+                        .map(
+                          (c) => PopupMenuItem<Company>(
+                            value: c,
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: const Color(
+                                      0xFF6C5CE7,
+                                    ).withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      c.initials,
+                                      style: const TextStyle(
+                                        color: Color(0xFF6C5CE7),
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        c.name,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (c.type != null)
+                                        Text(
+                                          c.type!,
+                                          style: const TextStyle(
+                                            color: Colors.grey,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  )
+                else
+                  TextButton.icon(
+                    onPressed: () => Navigator.pushNamed(context, '/companies'),
+                    icon: const Icon(
+                      Icons.add,
+                      color: Color(0xFF6C5CE7),
+                      size: 18,
+                    ),
+                    label: const Text(
+                      'Add More',
+                      style: TextStyle(color: Color(0xFF6C5CE7)),
+                    ),
                   ),
-                  label: const Text(
-                    'Switch',
-                    style: TextStyle(color: Color(0xFF6C5CE7)),
-                  ),
-                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -988,6 +1101,26 @@ class DashboardScreenState extends State<DashboardScreen> {
                               ),
                             ),
                           ],
+                          if (company.teamMembers.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.people,
+                                  color: Colors.white70,
+                                  size: 14,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${company.teamMembers.length + 1} members',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -1003,165 +1136,6 @@ class DashboardScreenState extends State<DashboardScreen> {
           ],
         );
       },
-    );
-  }
-
-  void _showTeamDetails(BuildContext context, TeamService teamService) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.75,
-        decoration: const BoxDecoration(
-          color: Color(0xFF1A1A2E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: 8),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[600],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 50,
-                        height: 50,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF6C5CE7),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.business,
-                          color: Colors.white,
-                          size: 28,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              teamService.companyName ?? 'My Company',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              teamService.companyType ?? '',
-                              style: const TextStyle(
-                                color: Color(0xFF6C5CE7),
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  _buildDetailRow(
-                    'Company Size',
-                    teamService.companySize ?? 'N/A',
-                  ),
-                  const SizedBox(height: 16),
-                  const Divider(color: Color(0xFF2A2A3E)),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Team Members (${teamService.memberCount})',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            ),
-            Expanded(
-              child: teamService.teamMembers.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'No team members added yet',
-                        style: TextStyle(color: Colors.white54),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      itemCount: teamService.teamMembers.length,
-                      itemBuilder: (context, index) {
-                        final email = teamService.teamMembers[index];
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2A2A3E),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                backgroundColor: const Color(0xFF6C5CE7),
-                                child: Text(
-                                  email[0].toUpperCase(),
-                                  style: const TextStyle(color: Colors.white),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  email,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white70, fontSize: 16),
-        ),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
     );
   }
 

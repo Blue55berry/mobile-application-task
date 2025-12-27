@@ -88,14 +88,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 // Welcome Text
                 const Text(
-                  'Welcome to SBS',
+                  'Welcome to SBS CRM',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Text(
                   'Your Sales & Business System',
                   style: TextStyle(color: Colors.grey[400], fontSize: 16),

@@ -746,7 +746,10 @@ class LeadsScreenState extends State<LeadsScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF6C5CE7),
               ),
-              child: const Text('Add'),
+              child: const Text(
+                'Add Lead',
+                style: TextStyle(color: Colors.white),
+              ),
               onPressed: () async {
                 // Validate inputs
                 if (nameController.text.trim().isEmpty) {
