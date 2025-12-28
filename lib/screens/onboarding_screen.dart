@@ -117,7 +117,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           const SizedBox(height: 48),
           // Title
           const Text(
-            'Welcome to CRM Call',
+            'Welcome to SBS CRM',
             style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.bold,
@@ -303,7 +303,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'On the next screen, find \'CRM Call\' and toggle it ON.',
+            'On the next screen, find \'SBS CRM\' and toggle it ON.',
             style: TextStyle(
               fontSize: 13,
               color: Colors.white.withValues(alpha: 0.5),

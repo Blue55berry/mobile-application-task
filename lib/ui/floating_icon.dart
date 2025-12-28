@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 ///
 /// Circular floating icon that appears during active calls.
 /// Features:
-/// - SBS branding
+/// - SBS CRM branding
 /// - Draggable
 /// - Positioned at screen edge
 /// - Tap to expand popup
@@ -69,7 +69,7 @@ class _FloatingIconWidgetState extends State<FloatingIconWidget> {
       ),
       child: Center(
         child: Text(
-          'SBS',
+          'SBS CRM',
           style: TextStyle(
             color: Colors.white,
             fontSize: 16,

@@ -56,7 +56,7 @@ class _FloatingCallButtonState extends State<FloatingCallButton> {
       ),
       child: const Center(
         child: Text(
-          'SBS',
+          'SBS CRM',
           style: TextStyle(
             color: Colors.white,
             fontSize: 16,

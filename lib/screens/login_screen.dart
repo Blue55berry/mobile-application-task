@@ -74,14 +74,16 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // SBS Logo Text
-                const Text(
-                  'SBS',
-                  style: TextStyle(
-                    color: Color(0xFF6C5CE7),
-                    fontSize: 72,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 8,
+                // SBS CRM Logo Text - Centered
+                Center(
+                  child: Text(
+                    'SBS CRM',
+                    style: TextStyle(
+                      color: Color(0xFF6C5CE7),
+                      fontSize: 72,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 8,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 40),

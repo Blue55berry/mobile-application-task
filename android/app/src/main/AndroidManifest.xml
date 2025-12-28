@@ -20,7 +20,7 @@
     <uses-permission android:name="android.permission.DISABLE_KEYGUARD"/>
     
     <application
-        android:label="sbs"
+        android:label="SBS CRM"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

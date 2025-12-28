@@ -1,5 +1,4 @@
 package com.example.sbs
-
 import android.accounts.AccountManager
 import android.app.*
 import android.content.BroadcastReceiver
@@ -14,6 +13,8 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.util.Log
@@ -78,6 +79,7 @@ class CallOverlayService : Service() {
     // Call tracking for incoming calls
     private var callStartTime: Long = 0
     private var isIncomingCall = false
+    private var iconMonitorJob: Job? = null // Monitor icon visibility during calls
 
     private val callDetectorCallback = object : PhoneCallDetector.CallStateCallback {
         override fun onIncomingCall(phoneNumber: String?) {
@@ -213,7 +215,8 @@ class CallOverlayService : Service() {
             Log.e(TAG, "Error releasing wake lock", e)
         }
         
-        removeFloatingIcon()
+        stopIconMonitoring() // Stop monitoring when service destroyed
+        removeFloatingIcon(force = true)
         removePopup()
         serviceScope.cancel()
         super.onDestroy()
@@ -307,6 +310,9 @@ class CallOverlayService : Service() {
             return
         }
         
+        // Mark as OUTGOING call for tracking
+        isIncomingCall = false
+        
         // OPTIMIZED: Show both icon and popup IMMEDIATELY for instant feedback
         try {
             showFloatingIcon()
@@ -325,25 +331,39 @@ class CallOverlayService : Service() {
         Log.d(TAG, "📞 Call started")
         // Record call start time for duration calculation
         callStartTime = System.currentTimeMillis()
+        startIconMonitoring() // Start monitoring icon visibility
         updateNotification("Call in progress")
     }
 
     private fun handleCallEnded() {
         Log.d(TAG, "📞 Call ended")
         
-        // Track and log incoming calls only
-        if (isIncomingCall && currentPhoneNumber != null && callStartTime > 0) {
-            val durationSeconds = ((System.currentTimeMillis() - callStartTime) / 1000).toInt()
-            logIncomingCall(currentPhoneNumber!!, durationSeconds)
+        // Stop icon monitoring
+        stopIconMonitoring()
+        
+        // Calculate duration if call was started
+        val durationSeconds = if (callStartTime > 0) {
+            ((System.currentTimeMillis() - callStartTime) / 1000).toInt()
+        } else {
+            0
         }
         
-        // Check for missed call auto-reply
+        // Log call based on direction
+        if (currentPhoneNumber != null && callStartTime > 0) {
+            if (isIncomingCall) {
+                logIncomingCall(currentPhoneNumber!!, durationSeconds)
+            } else {
+                logOutgoingCall(currentPhoneNumber!!, durationSeconds)
+            }
+        }
+        
+        // Check for missed call auto-reply (incoming only)
         if (isIncomingCall && currentPhoneNumber != null) {
             checkAndSendAutoReply(currentPhoneNumber!!)
         }
 
-        // FIXED: Auto-hide both popup and floating icon when call ends
-        removeFloatingIcon()
+        // FIXED: Auto-hide both popup and floating icon when call ends (forced)
+        removeFloatingIcon(force = true)
         removePopup()
         
         // Reset call tracking
@@ -361,6 +381,18 @@ class CallOverlayService : Service() {
             direction = "inbound",
             recipient = phoneNumber,
             subject = "Incoming Call",
+            body = "Duration: ${durationSeconds}s",
+            metadata = "duration:$durationSeconds"
+        )
+    }
+    
+    private fun logOutgoingCall(phoneNumber: String, durationSeconds: Int) {
+        Log.d(TAG, "📊 Logging outgoing call: $phoneNumber, duration: ${durationSeconds}s")
+        logCommunication(
+            type = "call",
+            direction = "outbound",
+            recipient = phoneNumber,
+            subject = "Outgoing Call",
             body = "Duration: ${durationSeconds}s",
             metadata = "duration:$durationSeconds"
         )
@@ -404,6 +436,13 @@ class CallOverlayService : Service() {
         Log.d(TAG, "🔍 ===== QUERY START =====")
         Log.d(TAG, "📞 Phone number: '$phoneNumber'")
         
+        // ⚡ INSTANT POPUP - Show immediately with loading state
+        Handler(Looper.getMainLooper()).post {
+            removePopup()
+            showPopup() // Shows "Loading..." for new contacts
+            Log.d(TAG, "⚡ Instant popup displayed")
+        }
+        
         // Reset query state
         isQueryComplete = false
         
@@ -422,6 +461,18 @@ class CallOverlayService : Service() {
             // Update current lead state
             currentLead = crmLead
             
+            // Auto-create lead for unknown numbers
+            if (currentLead == null && phoneNumber != null) {
+                val contactName = contactName ?: "Unknown Caller"
+                Log.d(TAG, "🆕 Creating new lead for unknown number: $phoneNumber as '$contactName'")
+                val newLeadId = createLeadForUnknownNumber(phoneNumber, contactName)
+                if (newLeadId != null) {
+                    // Re-query to get the full lead object
+                    currentLead = queryLeadFromDatabase(phoneNumber)
+                    Log.d(TAG, "✅ Auto-created and retrieved lead: ${currentLead?.name} (ID: ${currentLead?.id})")
+                }
+            }
+            
             // Show debug toast
             withContext(Dispatchers.Main) {
                 val message = if (crmLead != null) {
@@ -436,12 +487,10 @@ class CallOverlayService : Service() {
             
             isQueryComplete = true
             
-            // OPTIMIZED: Update popup with query results
-            // Recreate popup to show correct content (saved contact vs new form)
+            // 🔄 UPDATE POPUP - Refresh with actual data
             withContext(Dispatchers.Main) {
-                // Remove and show popup to refresh with updated currentLead state
                 removePopup()
-                showPopup()
+                showPopup() // Now shows saved contact or updated form
                 Log.d(TAG, "🎯 Updated popup: ${if (currentLead != null) "SAVED CONTACT" else "NEW CONTACT FORM"}")
             }
         }
@@ -628,6 +677,74 @@ class CallOverlayService : Service() {
             null
         }
     }
+    
+    private suspend fun createLeadForUnknownNumber(phoneNumber: String, name: String = "Unknown"): Int? = withContext(Dispatchers.IO) {
+        try {
+            val dbPath = getDatabasePath("sbs_database.db")
+            if (!dbPath.exists()) {
+                Log.e(TAG, "❌ Database not found for lead creation")
+                return@withContext null
+            }
+            
+            val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                dbPath.absolutePath,
+                null,
+                android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+            )
+            
+            val values = android.content.ContentValues().apply {
+                put("name", name)
+                put("phoneNumber", phoneNumber)
+                put("category", "Incoming Call")
+                put("status", "New")
+                put("createdAt", java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(java.util.Date()))
+                put("isVip", 0)
+                put("source", "call")
+            }
+            
+            val newId = db.insert("leads", null, values)
+            db.close()
+            
+            if (newId > 0) {
+                Log.d(TAG, "✅ Auto-created lead for $phoneNumber with ID: $newId")
+                newId.toInt()
+            } else {
+                Log.e(TAG, "❌ Failed to create lead for $phoneNumber")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error creating lead: ${e.message}", e)
+            null
+        }
+    }
+    
+    // === ICON MONITORING DURING CALLS ===
+    
+    private fun startIconMonitoring() {
+        iconMonitorJob?.cancel()
+        iconMonitorJob = serviceScope.launch {
+            while (callStartTime > 0) {
+                delay(2000) // Check every 2 seconds
+                ensureIconVisibleDuringCall()
+            }
+        }
+        Log.d(TAG, "✅ Icon monitoring started")
+    }
+    
+    private fun stopIconMonitoring() {
+        iconMonitorJob?.cancel()
+        iconMonitorJob = null
+        Log.d(TAG, "⏹️ Icon monitoring stopped")
+    }
+    
+    private fun ensureIconVisibleDuringCall() {
+        if (callStartTime > 0 && !isFloatingIconVisible && currentPhoneNumber != null) {
+            Log.w(TAG, "⚠️ Icon disappeared during call - recreating")
+            Handler(Looper.getMainLooper()).post {
+                showFloatingIcon()
+            }
+        }
+    }
 
     private fun showFloatingIcon() {
         if (isFloatingIconVisible) return
@@ -800,12 +917,18 @@ class CallOverlayService : Service() {
         }
     }
 
-    private fun removeFloatingIcon() {
+    private fun removeFloatingIcon(force: Boolean = false) {
+        // Don't remove during active call unless forced
+        if (!force && callStartTime > 0) {
+            Log.d(TAG, "⚠️ Prevented icon removal during active call")
+            return
+        }
+        
         try {
             floatingIconView?.let { windowManager?.removeView(it) }
             floatingIconView = null
             isFloatingIconVisible = false
-            Log.d(TAG, "Floating icon removed")
+            Log.d(TAG, "🗑️ Floating icon removed")
         } catch (e: Exception) {
             Log.e(TAG, "Error removing floating icon", e)
         }
@@ -888,14 +1011,10 @@ class CallOverlayService : Service() {
             }
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
-                // Clean gradient
-                colors = intArrayOf(
-                    Color.parseColor("#2D1B69"), 
-                    Color.parseColor("#1A1A3E")
-                )
-                gradientType = GradientDrawable.LINEAR_GRADIENT
-                cornerRadius = 20 * density
-                setStroke((1.5f * density).toInt(), Color.parseColor("#7C3AED"))
+                // Clean white background like reference
+                setColor(Color.WHITE)
+                cornerRadius = 16 * density
+                setStroke((1 * density).toInt(), Color.parseColor("#E0E0E0"))
             }
             elevation = 16 * density
             setPadding(
@@ -982,7 +1101,7 @@ class CallOverlayService : Service() {
             )
             text = name
             textSize = 18f
-            setTextColor(Color.WHITE)
+            setTextColor(Color.parseColor("#212121"))
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -999,7 +1118,7 @@ class CallOverlayService : Service() {
                 }
                 text = phoneNumber
                 textSize = 13f
-                setTextColor(Color.parseColor("#E0E0E0")) // Light gray instead of purple for better visibility
+                setTextColor(Color.parseColor("#757575")) // Medium gray for phone number
                 typeface = android.graphics.Typeface.MONOSPACE
                 maxLines = 1
             })
@@ -1024,12 +1143,12 @@ class CallOverlayService : Service() {
             ).apply {
                 setMargins((4 * density).toInt(), 0, (4 * density).toInt(), 0)
             }
-            text = "📱" // SMS/Message icon
+            text = "💬" // WhatsApp icon
             gravity = Gravity.CENTER
             textSize = 20f
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#34B7F1")) // Telegram/Messages blue
+                setColor(Color.parseColor("#25D366")) // WhatsApp green
             }
             setOnClickListener {
                 val message = "Hello ${name}, contacting you from SBS"
@@ -1097,12 +1216,12 @@ class CallOverlayService : Service() {
             ).apply {
                 setMargins((4 * density).toInt(), 0, (4 * density).toInt(), 0)
             }
-            text = "☎" // Phone call icon
+            text = "📞" // Phone call icon
             gravity = Gravity.CENTER
-            textSize = 20f
+            textSize = 18f
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#4CAF50"))
+                setColor(Color.parseColor("#6C5CE7")) // Purple for call button
             }
         }
         actionsLayout.addView(callIcon)
@@ -1115,13 +1234,13 @@ class CallOverlayService : Service() {
             ).apply {
                 setMargins((4 * density).toInt(), 0, 0, 0)
             }
-            text = "×"
+            text = "⋮"
             gravity = Gravity.CENTER
-            textSize = 28f
-            setTextColor(Color.WHITE)
+            textSize = 24f
+            setTextColor(Color.parseColor("#757575"))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#2D2D4A"))
+                setColor(Color.parseColor("#F5F5F5"))
             }
             setOnClickListener { removePopup() }
         }
@@ -1206,6 +1325,88 @@ class CallOverlayService : Service() {
         
         cardView.addView(labelContainer)
 
+        // ===== MOVE TO & ASSIGNED TO DROPDOWNS =====
+        val dropdownContainer = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = (12 * density).toInt()
+                bottomMargin = (12 * density).toInt()
+            }
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        // Move to... dropdown
+        val moveToButton = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                rightMargin = (8 * density).toInt()
+            }
+            text = "Move to... ▾"
+            textSize = 14f
+            setTextColor(Color.parseColor("#666666"))
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            setPadding((16 * density).toInt(), (14 * density).toInt(), (16 * density).toInt(), (14 * density).toInt())
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F5F5F5"))
+                cornerRadius = 8 * density
+            }
+            setOnClickListener {
+                showMoveToDialog()
+            }
+        }
+        dropdownContainer.addView(moveToButton)
+
+        // Assigned to dropdown
+        val assignedToButton = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+            text = "Assigned to ▾"
+            textSize = 14f
+            setTextColor(Color.parseColor("#666666"))
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            setPadding((16 * density).toInt(), (14 * density).toInt(), (16 * density).toInt(), (14 * density).toInt())
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F5F5F5"))
+                cornerRadius = 8 * density
+            }
+            setOnClickListener {
+                showAssignedToDialog()
+            }
+        }
+        dropdownContainer.addView(assignedToButton)
+
+        cardView.addView(dropdownContainer)
+
+        // ===== CREATE MEETING BUTTON =====
+        val meetingButton = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = (16 * density).toInt()
+            }
+            text = "📅 Create Meeting"
+            textSize = 15f
+            setTextColor(Color.parseColor("#333333"))
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            setPadding((16 * density).toInt(), (14 * density).toInt(), (16 * density).toInt(), (14 * density).toInt())
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F5F5F5"))
+                cornerRadius = 8 * density
+            }
+            setOnClickListener {
+                showCreateMeetingDialog()
+            }
+        }
+        cardView.addView(meetingButton)
 
         // ===== AUTOMATIC MESSAGES SECTION =====
         val autoMessagesContainer = LinearLayout(this).apply {
@@ -1613,6 +1814,90 @@ class CallOverlayService : Service() {
     // ===== BUTTON HELPER METHODS =====
     
     private fun showLabelSelector(button: TextView?) {
+        val labelNames = arrayOf("Hot Lead", "Cold Lead", "Follow Up", "Not Interested", "Customer", "VIP")
+        
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog)
+            .setTitle("Select Label")
+            .setItems(labelNames) { _, which ->
+                val selectedLabel = labelNames[which]
+                button?.text = selectedLabel
+                button?.setTextColor(Color.WHITE)
+                button?.background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#6C5CE7"))
+                    cornerRadius = 20 * resources.displayMetrics.density
+                }
+                
+                if (currentLead?.id == 0) {
+                    saveContactToCRM(selectedLabel)
+                } else {
+                    Toast.makeText(this, "✅ Label: $selectedLabel", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .create()
+            
+        dialog.window?.setType(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+            }
+        )
+        dialog.show()
+    }
+
+    private fun saveNewLead(name: String, email: String, category: String) {
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                    getDatabasePath("sbs_database.db").absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+                )
+                
+                val values = android.content.ContentValues().apply {
+                    put("name", name)
+                    put("phoneNumber", currentPhoneNumber ?: "")
+                    put("email", if (email.isNotEmpty()) email else null)
+                    put("category", category)
+                    put("status", "New")
+                    put("createdAt", java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(java.util.Date()))
+                    put("totalCalls", 0)
+                    put("isVip", 0)
+                }
+                
+                val id = db.insertWithOnConflict(
+                    "leads",
+                    null,
+                    values,
+                    android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE
+                )
+                db.close()
+                
+                withContext(Dispatchers.Main) {
+                    if (id > 0) {
+                        Log.d(TAG, "✅ Contact saved/updated: $name (ID: $id)")
+                        android.widget.Toast.makeText(this@CallOverlayService, "✅ Contact saved successfully!", android.widget.Toast.LENGTH_SHORT).show()
+                        
+                        currentLead = queryLeadFromDatabase(currentPhoneNumber ?: "")
+                        
+                        val intent = Intent("com.example.sbs.LEAD_CREATED")
+                        intent.putExtra("lead_id", id.toInt())
+                        intent.putExtra("name", name)
+                        intent.putExtra("phone", currentPhoneNumber)
+                        intent.putExtra("category", category)
+                        sendBroadcast(intent)
+                    } else {
+                        android.widget.Toast.makeText(this@CallOverlayService, "Failed to save contact", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving lead: ${e.message}", e)
+            }
+        }
+    }
+    
+    private fun showCategoryPicker(button: TextView) {
         // Predefined labels
         val labelNames = arrayOf("Hot Lead", "Cold Lead", "Follow Up", "Not Interested", "Customer", "VIP")
         
@@ -1622,9 +1907,9 @@ class CallOverlayService : Service() {
                 val selectedLabel = labelNames[which]
                 
                 // Update button text and style
-                button?.text = selectedLabel
-                button?.setTextColor(Color.WHITE)
-                button?.background = GradientDrawable().apply {
+                button.text = selectedLabel
+                button.setTextColor(Color.WHITE)
+                button.background = GradientDrawable().apply {
                     setColor(Color.parseColor("#6C5CE7"))
                     cornerRadius = 20 * resources.displayMetrics.density
                 }
@@ -1636,7 +1921,6 @@ class CallOverlayService : Service() {
                     Toast.makeText(this, "✅ Label: $selectedLabel", Toast.LENGTH_SHORT).show()
                 }
             }
-
             .create()
         
         // CRITICAL: Set window type to show over phone UI
@@ -1670,7 +1954,7 @@ class CallOverlayService : Service() {
                 
                 val values = android.content.ContentValues().apply {
                     put("name", currentLead?.name ?: "Unknown")
-                    put("phoneNumber", currentLead?.phone ?: "")
+                    put("phoneNumber", currentPhoneNumber ?: "")
                     put("email", currentLead?.email ?: "")
                     put("category", label)
                     put("status", "New")
@@ -1700,7 +1984,7 @@ class CallOverlayService : Service() {
                 }
             }
         }
-    }
+     }
     
     private fun showStatusDropdown(view: View, button: TextView) {
         val statuses = arrayOf("New", "Contacted", "Qualified", "Won", "Lost")
@@ -1745,7 +2029,7 @@ class CallOverlayService : Service() {
                 
                 val values = android.content.ContentValues().apply {
                     put("name", currentLead?.name ?: "Unknown")
-                    put("phoneNumber", currentLead?.phone ?: "")
+                    put("phoneNumber", currentPhoneNumber ?: "")
                     put("email", currentLead?.email ?: "")
                     put("category", "Contact")
                     put("status", status)
@@ -1957,36 +2241,64 @@ class CallOverlayService : Service() {
     private fun showCreateTaskDialog() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(50, 40, 50, 10)
+            setPadding(50, 40, 50, 40)
+            setBackgroundColor(Color.parseColor("#2A2A3E"))
         }
+        
+        
+        val titleLabel = TextView(this).apply {
+            text = "Task Title"
+            textSize = 14f
+            setTextColor(Color.parseColor("#B0B0B0"))
+            setPadding(0, 0, 0, 10)
+        }
+        layout.addView(titleLabel)
         
         val titleInput = EditText(this).apply {
             hint = "Task title"
             setText("Follow up with ${currentLead?.name ?: "Contact"}")
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#808080"))
+            setPadding(40, 30, 40, 30)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#1A1A2E"))
+                cornerRadius = 24f
+            }
         }
         layout.addView(titleInput)
         
+        
         val priorityLabel = TextView(this).apply {
-            text = "Priority:"
-            setPadding(0, 20, 0, 10)
+            text = "Priority"
+            textSize = 14f
+            setTextColor(Color.parseColor("#B0B0B0"))
+            setPadding(0, 40, 0, 10)
         }
         layout.addView(priorityLabel)
         
+        
         val prioritySpinner = Spinner(this).apply {
+            setPadding(30, 20, 30, 20)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#1A1A2E"))
+                cornerRadius = 24f
+            }
             adapter = ArrayAdapter(this@CallOverlayService, android.R.layout.simple_spinner_item,
                 arrayOf("Low", "Medium", "High"))
         }
         layout.addView(prioritySpinner)
         
-        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog)
+        
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Create Task")
             .setView(layout)
-            .setPositiveButton("Create") { _, _ ->
+            .setPositiveButton("CREATE") { _, _ ->
                 val title = titleInput.text.toString()
                 val priority = prioritySpinner.selectedItem.toString()
                 saveTask(title, priority)
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton("CANCEL", null)
             .create()
         
         // CRITICAL: Set window type to show over phone UI
@@ -1998,7 +2310,29 @@ class CallOverlayService : Service() {
                 WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
             }
         )
+        
+        // Apply purple theme
+        dialog.window?.setBackgroundDrawable(GradientDrawable().apply {
+            setColor(Color.parseColor("#2A2A3E"))
+            cornerRadius = 48f
+        })
+        
         dialog.show()
+        
+        // Style buttons
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.apply {
+            setTextColor(Color.WHITE)
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#6C5CE7"))
+                cornerRadius = 18f
+            }
+            setPadding(50, 25, 50, 25)
+        }
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.apply {
+            setTextColor(Color.parseColor("#B0B0B0"))
+            setTypeface(null, android.graphics.Typeface.BOLD)
+        }
     }
     
     private fun saveTask(title: String, priority: String) {
@@ -2096,67 +2430,7 @@ class CallOverlayService : Service() {
                 
                 Log.d(TAG, "Lead $leadId status updated to: $status")
             } catch (e: Exception) {
-                Log.e(TAG, "Error updating status: ${e.message}", e)
-            }
-        }
-    }
-
-    private fun saveNewLead(name: String, email: String, category: String) {
-        serviceScope.launch(Dispatchers.IO) {
-            try {
-                val db = android.database.sqlite.SQLiteDatabase.openDatabase(
-                    getDatabasePath("sbs_database.db").absolutePath,
-                    null,
-                    android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
-                )
-                
-                val values = android.content.ContentValues().apply {
-                    put("name", name)
-                    put("phoneNumber", currentPhoneNumber)
-                    put("email", if (email.isNotEmpty()) email else null)
-                    put("category", category)
-                    put("status", "New")
-                    put("createdAt", java.time.Instant.now().toString())
-                    put("totalCalls", 0)
-                    put("isVip", 0)
-                }
-                
-                // Use insertWithOnConflict to UPDATE if contact exists, INSERT if new
-                val id = db.insertWithOnConflict(
-                    "leads",
-                    null,
-                    values,
-                    android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE
-                )
-                db.close()
-                
-                withContext(Dispatchers.Main) {
-                    if (id > 0) {
-                        Log.d(TAG, "✅ Contact saved/updated: $name (ID: $id)")
-                        android.widget.Toast.makeText(
-                            this@CallOverlayService,
-                            "✅ Contact saved successfully!",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
-                        
-                        // Reload lead data
-                        currentLead = queryLeadFromDatabase(currentPhoneNumber ?: "")
-                        
-                        // Notify Flutter app about new lead
-                        notifyFlutterNewLeadSaved(id.toInt(), name, currentPhoneNumber ?: "", category)
-                    } else {
-                        Log.e(TAG, "Failed to save lead")
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error saving lead", e)
-                withContext(Dispatchers.Main) {
-                    android.widget.Toast.makeText(
-                        this@CallOverlayService,
-                        "Failed to save contact",
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                }
+        Log.e(TAG, "Error updating status: ${e.message}", e)
             }
         }
     }
@@ -2261,8 +2535,11 @@ class CallOverlayService : Service() {
     ) {
         GlobalScope.launch(Dispatchers.IO) {
             try {
-                val leadId = currentLead?.id ?: 0 // Store even if ID is 0
-                if (leadId == 0 && recipient == null) return@launch
+                val leadId = currentLead?.id
+                if (leadId == null || leadId == 0) {
+                    Log.w(TAG, "⚠️ Cannot log communication: no valid lead (leadId=$leadId, recipient=$recipient)")
+                    return@launch
+                }
                 
                 val dbPath = getDatabasePath("sbs_database.db")
                 if (!dbPath.exists()) {
@@ -2303,6 +2580,82 @@ class CallOverlayService : Service() {
             } catch (e: Exception) {
                 Log.e(TAG, "Error logging communication", e)
             }
+        }
+    }
+    
+    private fun showMoveToDialog() {
+        val statuses = arrayOf("New", "In Progress", "Follow Up", "Contacted", "Qualified", "Converted")
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog)
+            .setTitle("Move to Status")
+            .setItems(statuses) { _, which ->
+                val selectedStatus = statuses[which]
+                currentLead?.id?.let { leadId ->
+                    updateLeadStatusInDB(leadId, selectedStatus)
+                    Toast.makeText(this, "✅ Moved to: $selectedStatus", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .create()
+        dialog.window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else { @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_SYSTEM_ALERT })
+        dialog.show()
+    }
+    
+    private fun showAssignedToDialog() {
+        val teamMembers = arrayOf("Unassigned", "Admin", "Sales Team", "Support Team")
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog)
+            .setTitle("Assign to Team Member")
+            .setItems(teamMembers) { _, which ->
+                val selectedMember = teamMembers[which]
+                currentLead?.id?.let { leadId ->
+                    updateLeadAssignmentInDB(leadId, selectedMember)
+                    Toast.makeText(this, "✅ Assigned to: $selectedMember", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .create()
+        dialog.window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else { @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_SYSTEM_ALERT })
+        dialog.show()
+    }
+    
+    private fun updateLeadStatusInDB(leadId: Int, status: String) {
+        GlobalScope.launch(Dispatchers.IO) { 
+            try {
+                val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                    getDatabasePath("sbs_database.db").absolutePath, 
+                    null, 
+                    android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+                )
+                val values = android.content.ContentValues().apply { put("status", status) }
+                db.update("leads", values, "id = ?", arrayOf(leadId.toString()))
+                db.close()
+                withContext(Dispatchers.Main) { 
+                    Log.d(TAG, "✅ Lead status updated to: $status") 
+                }
+            } catch (e: Exception) { 
+                Log.e(TAG, "Error updating lead status", e) 
+            } 
+        }
+    }
+    
+    private fun updateLeadAssignmentInDB(leadId: Int, assignedTo: String) {
+        GlobalScope.launch(Dispatchers.IO) { 
+            try {
+                val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                    getDatabasePath("sbs_database.db").absolutePath, 
+                    null, 
+                    android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+                )
+                val values = android.content.ContentValues().apply { put("assignedTo", assignedTo) }
+                db.update("leads", values, "id = ?", arrayOf(leadId.toString()))
+                db.close()
+                withContext(Dispatchers.Main) { 
+                    Log.d(TAG, "✅ Lead assigned to: $assignedTo") 
+                }
+            } catch (e: Exception) { 
+                Log.e(TAG, "Error updating lead assignment", e) 
+            } 
         }
     }
 }

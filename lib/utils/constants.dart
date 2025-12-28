@@ -1,5 +1,5 @@
 class Constants {
-  static const String appName = 'SBS SRM';
+  static const String appName = 'SBS CRM';
 
   static const Map<String, String> categoryLabels = {
     'jobs': 'Jobs',

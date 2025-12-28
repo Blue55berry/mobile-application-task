@@ -14,10 +14,63 @@ class LabelService extends ChangeNotifier {
     loadLabels();
   }
 
+  Future<void> initializeDefaultLabels() async {
+    final existingLabels = await _dbService.getLabels();
+
+    // Define new default labels
+    final defaultLabels = [
+      Label(name: 'Vendor', color: '#FF6B35'), // Orange-red
+      Label(name: 'Internship', color: '#4ECDC4'), // Teal
+      Label(name: 'Job', color: '#45B7D1'), // Sky blue
+      Label(name: 'Business', color: '#FFA07A'), // Light salmon
+      Label(name: 'Course', color: '#9B59B6'), // Purple
+    ];
+
+    if (existingLabels.isEmpty) {
+      // No labels exist - create defaults
+      for (var label in defaultLabels) {
+        await _dbService.insertLabel(label);
+      }
+      await loadLabels();
+    } else {
+      // Check if we have old default labels that need migration
+      final oldDefaults = ['Client', 'Partner', 'Supplier', 'Other'];
+      final hasOldDefaults = existingLabels.any(
+        (label) => oldDefaults.contains(label.name),
+      );
+
+      if (hasOldDefaults) {
+        // Migrate: Delete old defaults and add new ones
+        for (var label in existingLabels) {
+          if (oldDefaults.contains(label.name)) {
+            try {
+              if (label.id != null) {
+                await _dbService.deleteLabel(label.id!);
+              }
+            } catch (e) {
+              debugPrint('Could not delete old label ${label.name}: $e');
+            }
+          }
+        }
+
+        // Add new defaults
+        for (var label in defaultLabels) {
+          // Check if it doesn't already exist
+          if (!existingLabels.any((l) => l.name == label.name)) {
+            await _dbService.insertLabel(label);
+          }
+        }
+
+        await loadLabels();
+      }
+    }
+  }
+
   Future<void> loadLabels() async {
     _isLoading = true;
     notifyListeners();
     try {
+      await initializeDefaultLabels(); // Call this before loading to ensure defaults are present
       _labels = await _dbService.getLabels();
     } catch (e) {
       debugPrint('Error loading labels: $e');

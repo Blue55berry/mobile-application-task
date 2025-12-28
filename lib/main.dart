@@ -248,6 +248,10 @@ class MyApp extends StatelessWidget {
               final automaticMessageService = context
                   .read<AutomaticMessageService>();
               automaticMessageService.loadMessages();
+
+              // Initialize default labels if needed
+              final labelService = context.read<LabelService>();
+              labelService.initializeDefaultLabels();
             }
           });
 

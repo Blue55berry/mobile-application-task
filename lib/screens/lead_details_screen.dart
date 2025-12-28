@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart'; // Add intl for dates
 import '../models/lead_model.dart';
@@ -479,6 +480,13 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
           ],
           bottom: const TabBar(
             indicatorColor: Color.fromARGB(229, 255, 255, 255),
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.grey,
+            labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            unselectedLabelStyle: TextStyle(
+              fontWeight: FontWeight.normal,
+              fontSize: 14,
+            ),
             tabs: [
               Tab(text: 'Info'),
               Tab(text: 'Timeline'),
@@ -506,83 +514,124 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: const BoxDecoration(color: Color(0xFF1A1A2E)),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Avatar with fixed size
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _getCategoryColor(
-                _lead.category,
-              ).withAlpha((255 * 0.2).round()),
-            ),
-            child: Center(
-              child: Text(
-                _lead.name.isNotEmpty ? _lead.name[0].toUpperCase() : '?',
-                style: TextStyle(
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
-                  color: _getCategoryColor(_lead.category),
-                ),
-              ),
-            ),
+      margin: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A3E).withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.1),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
-          const SizedBox(width: 20),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
+          BoxShadow(
+            color: _getCategoryColor(_lead.category).withValues(alpha: 0.2),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        _lead.name,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          height: 1.2,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                // Avatar with fixed size
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _getCategoryColor(
+                      _lead.category,
+                    ).withAlpha((255 * 0.2).round()),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _getCategoryColor(
+                          _lead.category,
+                        ).withValues(alpha: 0.15),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      _lead.name.isNotEmpty ? _lead.name[0].toUpperCase() : '?',
+                      style: TextStyle(
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold,
+                        color: _getCategoryColor(_lead.category),
                       ),
                     ),
-                    if (_lead.isVip) ...[
-                      const SizedBox(width: 8),
-                      const Icon(Icons.star, color: Colors.amber, size: 20),
-                    ],
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: () => _makePhoneCall(_lead.phoneNumber),
-                  child: Row(
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
-                        Icons.phone,
-                        color: Color(0xFF6C5CE7),
-                        size: 16,
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          _lead.phoneNumber ?? 'No phone number',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Color(0xFF6C5CE7),
-                            decoration: TextDecoration.underline,
-                            height: 1.3,
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              _lead.name,
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                height: 1.2,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          if (_lead.isVip) ...[
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.star,
+                              color: Colors.amber,
+                              size: 20,
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () => _makePhoneCall(_lead.phoneNumber),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.phone,
+                              color: Color(0xFF6C5CE7),
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                _lead.phoneNumber ?? 'No phone number',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Color(0xFF6C5CE7),
+                                  decoration: TextDecoration.underline,
+                                  height: 1.3,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -591,7 +640,7 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -669,10 +718,16 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
       case 'communication':
         final comm = item.data as Communication;
         final isAuto = comm.metadata?['automatic'] == 'true';
+        final duration = _extractDuration(comm);
         icon = _getCommIcon(comm.type);
         color = _getCommColor(comm.type);
         title = '${comm.type.toUpperCase()} ${comm.direction}';
-        subtitle = '${comm.body ?? ""}${isAuto ? " (Auto-reply)" : ""}';
+        // Show duration prominently, otherwise show body
+        if (duration.isNotEmpty) {
+          subtitle = '${isAuto ? "Auto-reply sent • " : ""}Duration: $duration';
+        } else {
+          subtitle = '${comm.body ?? ""}${isAuto ? " (Auto-reply)" : ""}';
+        }
         break;
       default:
         icon = Icons.circle;
@@ -681,54 +736,85 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
         subtitle = '';
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withAlpha(50),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: color, size: 20),
-              ),
-              Container(width: 2, height: 40, color: Colors.grey.withAlpha(50)),
-            ],
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A3E).withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Column(
                   children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: color.withAlpha(50),
+                        shape: BoxShape.circle,
                       ),
+                      child: Icon(icon, color: color, size: 20),
                     ),
-                    Text(
-                      DateFormat('MMM d, h:mm a').format(item.date),
-                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                    Container(
+                      width: 2,
+                      height: 40,
+                      color: Colors.grey.withAlpha(50),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                Text(subtitle, style: const TextStyle(color: Colors.grey)),
-                if (item.type == 'communication')
-                  _buildCommAction(item.data as Communication),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          Text(
+                            DateFormat('MMM d, h:mm a').format(item.date),
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                      if (item.type == 'communication')
+                        _buildCommAction(item.data as Communication),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -806,12 +892,10 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
                     _loadData(); // Refresh timeline
                   },
                   icon: const Icon(Icons.add),
-                  label: const Text(
-                    'Add Task',
-                    style: TextStyle(color: Colors.white),
-                  ),
+                  label: const Text('Add Task'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF6C5CE7),
+                    foregroundColor: Colors.white, // Makes text and icon white
                   ),
                 ),
               ],
@@ -857,34 +941,55 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
   }
 
   Widget _buildInfoCard() {
-    return Card(
-      color: const Color(0xFF2A2A3E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            _buildInfoRow(Icons.category, 'Category', _lead.category),
-            _buildInfoRow(Icons.track_changes, 'Status', _lead.status),
-            _buildClickableEmailRow(),
-            _buildInfoRow(
-              Icons.call,
-              'Total Calls',
-              _lead.totalCalls.toString(),
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A3E).withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.1), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+          BoxShadow(
+            color: const Color(0xFF6C5CE7).withValues(alpha: 0.1),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              children: [
+                _buildInfoRow(Icons.category, 'Category', _lead.category),
+                _buildInfoRow(Icons.track_changes, 'Status', _lead.status),
+                _buildClickableEmailRow(),
+                _buildInfoRow(
+                  Icons.call,
+                  'Total Calls',
+                  _lead.totalCalls.toString(),
+                ),
+                _buildInfoRow(
+                  Icons.date_range,
+                  'Last Call',
+                  _lead.lastCallDate != null
+                      ? DateFormat('MMM d, y').format(_lead.lastCallDate!)
+                      : 'N/A',
+                ),
+                _buildInfoRow(
+                  Icons.access_time,
+                  'Assigned Time',
+                  _lead.assignedTime ?? 'Not set',
+                ),
+              ],
             ),
-            _buildInfoRow(
-              Icons.date_range,
-              'Last Call',
-              _lead.lastCallDate != null
-                  ? DateFormat('MMM d, y').format(_lead.lastCallDate!)
-                  : 'N/A',
-            ),
-            _buildInfoRow(
-              Icons.access_time,
-              'Assigned Time',
-              _lead.assignedTime ?? 'Not set',
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -919,23 +1024,35 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Icon(Icons.email, color: Colors.grey, size: 20),
-          const SizedBox(width: 16),
-          const Text(
-            'Email',
-            style: TextStyle(color: Colors.grey, fontSize: 14),
+          Row(
+            children: [
+              Icon(
+                Icons.email,
+                color: hasEmail ? const Color(0xFF6C5CE7) : Colors.grey,
+                size: 20,
+              ),
+              const SizedBox(width: 16),
+              const Text(
+                'Email',
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+            ],
           ),
-          const Spacer(),
-          GestureDetector(
-            onTap: hasEmail ? () => _sendEmail(_lead.email) : null,
-            child: Text(
-              emailText,
-              style: TextStyle(
-                color: hasEmail ? const Color(0xFF6C5CE7) : Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                decoration: hasEmail ? TextDecoration.underline : null,
+          Flexible(
+            child: GestureDetector(
+              onTap: hasEmail ? () => _sendEmail(_lead.email) : null,
+              child: Text(
+                emailText,
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                style: TextStyle(
+                  color: hasEmail ? const Color(0xFF6C5CE7) : Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
@@ -1058,6 +1175,7 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF6C5CE7),
+              foregroundColor: Colors.white, // White text on purple
             ),
             onPressed: () async {
               if (noteController.text.isNotEmpty) {
@@ -1149,6 +1267,37 @@ class _LeadDetailScreenState extends State<LeadDetailScreen> {
         SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
       );
     }
+  }
+
+  // Helper to extract duration from communication
+  String _extractDuration(Communication comm) {
+    // Check metadata first
+    if (comm.metadata != null && comm.metadata!.containsKey('duration')) {
+      final durationStr = comm.metadata!['duration'].toString();
+      final seconds =
+          int.tryParse(durationStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      if (seconds > 0) return _formatDuration(seconds);
+    }
+
+    // Try to parse from body (e.g., "Duration: 45s")
+    if (comm.body != null && comm.body!.contains('Duration:')) {
+      final match = RegExp(r'Duration:\s*(\d+)s').firstMatch(comm.body!);
+      if (match != null) {
+        final seconds = int.tryParse(match.group(1)!) ?? 0;
+        return _formatDuration(seconds);
+      }
+    }
+
+    return '';
+  }
+
+  String _formatDuration(int seconds) {
+    if (seconds == 0) return '';
+    if (seconds < 60) return '${seconds}s';
+    final minutes = seconds ~/ 60;
+    final secs = seconds % 60;
+    if (secs == 0) return '${minutes}m';
+    return '${minutes}m ${secs}s';
   }
 }
 

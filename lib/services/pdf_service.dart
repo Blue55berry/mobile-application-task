@@ -68,7 +68,7 @@ class PdfService {
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             pw.Text(
-              'SBS',
+              'SBS CRM',
               style: const pw.TextStyle(
                 fontSize: 32,
                 color: PdfColors.deepPurple,

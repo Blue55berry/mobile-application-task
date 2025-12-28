@@ -191,6 +191,15 @@ class SettingsScreenState extends State<SettingsScreen> {
                               fontSize: 14,
                             ),
                           ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Default labels: Vendor, Course, Business, Job, Internship',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
                           const SizedBox(height: 12),
                           if (labelService.isLoading)
                             const Center(

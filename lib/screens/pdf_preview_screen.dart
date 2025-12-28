@@ -70,7 +70,7 @@ class PdfPreviewScreen extends StatelessWidget {
       final result = await Share.shareXFiles(
         [XFile(file.path, mimeType: 'application/pdf')],
         subject: fileName,
-        text: 'Quotation from SBS',
+        text: 'Quotation from SBS CRM',
       );
 
       debugPrint('✅ Share result: ${result.status}');

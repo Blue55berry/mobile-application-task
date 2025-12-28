@@ -298,7 +298,7 @@ class _EnhancedOnboardingScreenState extends State<EnhancedOnboardingScreen> {
           const SizedBox(height: 16),
 
           const Text(
-            'SBS needs to be set as your default Caller ID & Spam app to identify callers.',
+            'SBS CRM needs to be set as your default Caller ID & Spam app to identify callers.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 16,
@@ -406,7 +406,7 @@ class _EnhancedOnboardingScreenState extends State<EnhancedOnboardingScreen> {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 40),
             child: Text(
-              'To show SBS popup FIRST during calls, please disable battery restrictions:',
+              'To show SBS CRM popup FIRST during calls, please disable battery restrictions:',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 16, color: Color(0xFFAAAAAA)),
             ),
@@ -429,7 +429,7 @@ class _EnhancedOnboardingScreenState extends State<EnhancedOnboardingScreen> {
                 SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Tap "Allow" on the next dialog to let SBS run in background',
+                    'Tap "Allow" on the next dialog to let SBS CRM run in background',
                     style: TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                 ),
@@ -636,7 +636,7 @@ class _EnhancedOnboardingScreenState extends State<EnhancedOnboardingScreen> {
           const SizedBox(height: 16),
 
           const Text(
-            'Allow SBS to run in the background to monitor calls and provide real-time contact information.',
+            'Allow SBS CRM to run in the background to monitor calls and provide real-time contact information.',
             style: TextStyle(
               fontSize: 16,
               color: Color(0xFFAAAAAA),
@@ -670,7 +670,7 @@ class _EnhancedOnboardingScreenState extends State<EnhancedOnboardingScreen> {
                 const Text(
                   '1. Tap "Open Settings" below\n'
                   '2. Find "Autostart" or "Auto-start"\n'
-                  '3. Enable for SBS\n'
+                  '3. Enable for SBS CRM\n'
                   '4. Return to this app',
                   style: TextStyle(
                     color: Colors.white70,

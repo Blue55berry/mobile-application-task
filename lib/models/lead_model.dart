@@ -59,22 +59,35 @@ class Lead {
       name: map['name'],
       category: map['category'],
       status: map['status'],
-      createdAt: DateTime.parse(map['createdAt']),
+      createdAt: _parseDateTime(map['createdAt']),
       phoneNumber: map['phoneNumber'],
       email: map['email'],
       description: map['description'],
       lastCallDate: map['lastCallDate'] != null
-          ? DateTime.parse(map['lastCallDate'])
+          ? _parseDateTime(map['lastCallDate'])
           : null,
       totalCalls: map['totalCalls'] ?? 0,
       assignedDate: map['assignedDate'] != null
-          ? DateTime.parse(map['assignedDate'])
+          ? _parseDateTime(map['assignedDate'])
           : null,
       assignedTime: map['assignedTime'],
       isVip: map['isVip'] == 1,
       source: map['source'] ?? 'crm',
       photoUrl: map['photoUrl'],
     );
+  }
+
+  // Helper to parse both ISO8601 strings and Unix timestamps
+  static DateTime _parseDateTime(dynamic value) {
+    if (value is int) {
+      // Unix timestamp in milliseconds (from Android native code)
+      return DateTime.fromMillisecondsSinceEpoch(value);
+    } else if (value is String) {
+      // ISO8601 string (from Flutter code)
+      return DateTime.parse(value);
+    } else {
+      throw FormatException('Invalid date format: $value');
+    }
   }
 
   Lead copyWith({
