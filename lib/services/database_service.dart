@@ -28,7 +28,7 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), dbName);
     return await openDatabase(
       path,
-      version: 14, // Incremented for team_members column migration
+      version: 15, // Incremented for automatic_messages table
       onCreate: (db, version) async {
         // Create leads table
         await db.execute('''CREATE TABLE leads(
@@ -239,6 +239,32 @@ class DatabaseService {
             is_active INTEGER DEFAULT 1,
             created_at TEXT NOT NULL
           )''');
+
+        // Create automatic_messages table
+        await db.execute('''CREATE TABLE automatic_messages(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            message TEXT NOT NULL,
+            trigger TEXT NOT NULL,
+            is_enabled INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL
+          )''');
+
+        // Insert default automatic messages
+        await db.insert('automatic_messages', {
+          'name': 'Missed Call Reply',
+          'message': 'Sorry I missed your call. I will get back to you soon.',
+          'trigger': 'missed_call',
+          'is_enabled': 1,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+        await db.insert('automatic_messages', {
+          'name': 'New Contact Welcome',
+          'message': 'Thank you for contacting us! We\'ll be in touch shortly.',
+          'trigger': 'new_contact',
+          'is_enabled': 1,
+          'created_at': DateTime.now().toIso8601String(),
+        });
 
         // Create index on phone number for faster lookups
         await db.execute(
@@ -489,6 +515,35 @@ class DatabaseService {
           } catch (e) {
             debugPrint('⚠️ team_members column may already exist: $e');
           }
+        }
+
+        if (oldVersion < 15) {
+          // Add automatic_messages table when upgrading to version 15
+          await db.execute('''CREATE TABLE IF NOT EXISTS automatic_messages(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              message TEXT NOT NULL,
+              trigger TEXT NOT NULL,
+              is_enabled INTEGER DEFAULT 1,
+              created_at TEXT NOT NULL
+            )''');
+
+          // Insert default messages
+          await db.insert('automatic_messages', {
+            'name': 'Missed Call Reply',
+            'message': 'Sorry I missed your call. I will get back to you soon.',
+            'trigger': 'missed_call',
+            'is_enabled': 1,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+          await db.insert('automatic_messages', {
+            'name': 'New Contact Welcome',
+            'message':
+                'Thank you for contacting us! We will be in touch shortly.',
+            'trigger': 'new_contact',
+            'is_enabled': 1,
+            'created_at': DateTime.now().toIso8601String(),
+          });
         }
       },
     );

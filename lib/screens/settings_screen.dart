@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/label_service.dart';
+import '../services/automatic_message_service.dart';
 import '../services/subscription_service.dart';
 import '../models/user_model.dart';
 import '../models/label_model.dart';
+import '../models/automatic_message_model.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../widgets/profile_header.dart';
 import 'subscription_screen.dart';
@@ -217,6 +219,72 @@ class SettingsScreenState extends State<SettingsScreen> {
                                   _showCreateLabelDialog(labelService),
                               icon: const Icon(Icons.add, size: 20),
                               label: const Text('Create New Label'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF6C5CE7),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ]);
+                },
+              ),
+
+              const SizedBox(height: 24),
+
+              // Automatic Messages Section
+              Consumer<AutomaticMessageService>(
+                builder: (context, messageService, child) {
+                  return _buildSettingsSection('Automatic Messages', [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2A2A3E).withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Customize auto-reply messages for missed calls',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          if (messageService.isLoading)
+                            const Center(
+                              child: CircularProgressIndicator(
+                                color: Color(0xFF6C5CE7),
+                              ),
+                            )
+                          else if (messageService.messages.isEmpty)
+                            const Text(
+                              'No automatic messages yet',
+                              style: TextStyle(color: Colors.grey),
+                            )
+                          else
+                            ...messageService.messages.map((message) {
+                              return _buildMessageTile(message, messageService);
+                            }),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () =>
+                                  _showCreateMessageDialog(messageService),
+                              icon: const Icon(Icons.add, size: 20),
+                              label: const Text('Create New Message'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF6C5CE7),
                                 foregroundColor: Colors.white,
@@ -914,6 +982,350 @@ class SettingsScreenState extends State<SettingsScreen> {
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build message tile widget - shows message with toggle and actions
+  Widget _buildMessageTile(
+    AutomaticMessage message,
+    AutomaticMessageService messageService,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A2E),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  message.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  message.message,
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Switch(
+            value: message.isEnabled,
+            onChanged: (value) => messageService.toggleMessage(message),
+            activeTrackColor: const Color(0xFF6C5CE7),
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit, size: 18, color: Colors.white70),
+            onPressed: () => _showEditMessageDialog(message, messageService),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+            onPressed: () => _confirmDeleteMessage(message, messageService),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Show create message dialog
+  void _showCreateMessageDialog(AutomaticMessageService messageService) {
+    final nameController = TextEditingController();
+    final messageController = TextEditingController();
+    String selectedTrigger = 'missed_call';
+
+    final triggers = {
+      'missed_call': 'Missed Call',
+      'new_contact': 'New Contact',
+      'follow_up': 'Follow Up',
+    };
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF2A2A3E),
+          title: const Text(
+            'Create Automatic Message',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Message Name',
+                    labelStyle: TextStyle(color: Colors.grey),
+                    hintText: 'e.g., Missed Call Reply',
+                    hintStyle: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: messageController,
+                  style: const TextStyle(color: Colors.white),
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Message Text',
+                    labelStyle: TextStyle(color: Colors.grey),
+                    hintText: 'Enter the message to send...',
+                    hintStyle: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedTrigger,
+                  dropdownColor: const Color(0xFF1A1A2E),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Trigger',
+                    labelStyle: TextStyle(color: Colors.grey),
+                  ),
+                  items: triggers.entries.map((entry) {
+                    return DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedTrigger = value!;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final name = nameController.text.trim();
+                final message = messageController.text.trim();
+
+                if (name.isEmpty || message.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please fill all fields'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
+                final success = await messageService.addMessage(
+                  name,
+                  message,
+                  selectedTrigger,
+                );
+
+                if (!context.mounted) return;
+                Navigator.pop(context);
+
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Message "$name" created successfully!'),
+                      backgroundColor: const Color(0xFF6C5CE7),
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6C5CE7),
+              ),
+              child: const Text(
+                'Create',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Show edit message dialog
+  void _showEditMessageDialog(
+    AutomaticMessage message,
+    AutomaticMessageService messageService,
+  ) {
+    final nameController = TextEditingController(text: message.name);
+    final messageController = TextEditingController(text: message.message);
+    String selectedTrigger = message.trigger;
+
+    final triggers = {
+      'missed_call': 'Missed Call',
+      'new_contact': 'New Contact',
+      'follow_up': 'Follow Up',
+    };
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF2A2A3E),
+          title: const Text(
+            'Edit Automatic Message',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Message Name',
+                    labelStyle: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: messageController,
+                  style: const TextStyle(color: Colors.white),
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Message Text',
+                    labelStyle: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedTrigger,
+                  dropdownColor: const Color(0xFF1A1A2E),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Trigger',
+                    labelStyle: TextStyle(color: Colors.grey),
+                  ),
+                  items: triggers.entries.map((entry) {
+                    return DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedTrigger = value!;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final name = nameController.text.trim();
+                final messageText = messageController.text.trim();
+
+                if (name.isEmpty || messageText.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please fill all fields'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
+                final updated = message.copyWith(
+                  name: name,
+                  message: messageText,
+                  trigger: selectedTrigger,
+                );
+
+                final success = await messageService.updateMessage(updated);
+
+                if (!context.mounted) return;
+                Navigator.pop(context);
+
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Message updated successfully!'),
+                      backgroundColor: Color(0xFF6C5CE7),
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6C5CE7),
+              ),
+              child: const Text(
+                'Update',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Confirm delete message
+  void _confirmDeleteMessage(
+    AutomaticMessage message,
+    AutomaticMessageService messageService,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A3E),
+        title: const Text(
+          'Delete Message',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          'Are you sure you want to delete "${message.name}"?',
+          style: const TextStyle(color: Colors.white),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              await messageService.deleteMessage(message.id!);
+              if (!context.mounted) return;
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Message deleted'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
           ),
         ],

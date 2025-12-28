@@ -1178,7 +1178,12 @@ class CallOverlayService : Service() {
         
         // Show current label/category chip
         val currentCategory = currentLead?.category
+        Log.d(TAG, "🏷️ DEBUG: currentCategory = '$currentCategory'")
+        Log.d(TAG, "🏷️ DEBUG: currentLead?.name = '${currentLead?.name}'")
+        Log.d(TAG, "🏷️ DEBUG: currentLead?.id = ${currentLead?.id}")
+        
         if (!currentCategory.isNullOrEmpty()) {
+            Log.d(TAG, "🏷️ Creating label chip for category: $currentCategory")
             val labelChip = TextView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1195,6 +1200,8 @@ class CallOverlayService : Service() {
                 }
             }
             labelContainer.addView(labelChip)
+        } else {
+            Log.w(TAG, "⚠️ No category to display - currentCategory is null or empty")
         }
         
         cardView.addView(labelContainer)

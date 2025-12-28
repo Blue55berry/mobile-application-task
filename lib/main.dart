@@ -30,6 +30,7 @@ import 'services/quotation_service.dart';
 import 'services/invoice_service.dart';
 import 'services/subscription_service.dart';
 import 'services/company_service.dart';
+import 'services/automatic_message_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'utils/theme.dart';
@@ -199,6 +200,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CompanyService()),
         ChangeNotifierProvider(create: (_) => QuotationService()),
         ChangeNotifierProvider(create: (_) => InvoiceService()),
+        ChangeNotifierProvider(create: (_) => AutomaticMessageService()),
         ChangeNotifierProxyProvider<TaskService, LeadsService>(
           create: (context) => LeadsService(context.read<TaskService>()),
           update: (context, taskService, leadsService) =>
@@ -241,6 +243,11 @@ class MyApp extends StatelessWidget {
               // Initialize CompanyService
               final companyService = context.read<CompanyService>();
               companyService.initialize();
+
+              // Initialize AutomaticMessageService
+              final automaticMessageService = context
+                  .read<AutomaticMessageService>();
+              automaticMessageService.loadMessages();
             }
           });
 
