@@ -1,5 +1,6 @@
 // lib/services/database_service.dart (updated)
 
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/lead_model.dart';
@@ -484,9 +485,9 @@ class DatabaseService {
             await db.execute(
               'ALTER TABLE companies ADD COLUMN team_members TEXT',
             );
-            print('✅ Added team_members column to companies table');
+            debugPrint('✅ Added team_members column to companies table');
           } catch (e) {
-            print('⚠️ team_members column may already exist: $e');
+            debugPrint('⚠️ team_members column may already exist: $e');
           }
         }
       },

@@ -957,7 +957,7 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
             ),
             onPressed: () async {
               final email = emailController.text.trim();
-              print('🔍 Add Member clicked, email: $email');
+              debugPrint('🔍 Add Member clicked, email: $email');
 
               // Capture all needed references from dialogContext before async operations
               final companyService = Provider.of<CompanyService>(
@@ -969,7 +969,7 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
 
               // Validate email
               if (email.isEmpty) {
-                print('❌ Email is empty');
+                debugPrint('❌ Email is empty');
                 messenger.showSnackBar(
                   const SnackBar(
                     content: Text('Please enter an email address'),
@@ -980,7 +980,7 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
               }
 
               if (!email.contains('@') || !email.contains('.')) {
-                print('❌ Invalid email format');
+                debugPrint('❌ Invalid email format');
                 messenger.showSnackBar(
                   const SnackBar(
                     content: Text('Please enter a valid email address'),
@@ -992,7 +992,7 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
 
               // Check if email already exists
               if (company.teamMembers.contains(email)) {
-                print('❌ Email already exists in team');
+                debugPrint('❌ Email already exists in team');
                 messenger.showSnackBar(
                   const SnackBar(
                     content: Text('This email is already a team member'),
@@ -1002,7 +1002,7 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
                 return;
               }
 
-              print('✅ Email validated, adding to team...');
+              debugPrint('✅ Email validated, adding to team...');
               final updatedMembers = List<String>.from(company.teamMembers);
               updatedMembers.add(email);
 
@@ -1011,24 +1011,24 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
                 memberCount: updatedMembers.length + 1,
               );
 
-              print(
+              debugPrint(
                 '📝 Updating company with ${updatedMembers.length} members',
               );
               final success = await companyService.updateCompany(
                 updatedCompany,
               );
-              print('✅ Update result: $success');
+              debugPrint('✅ Update result: $success');
 
               if (!dialogContext.mounted) {
-                print('⚠️ Dialog context not mounted');
+                debugPrint('⚠️ Dialog context not mounted');
                 return;
               }
 
               navigator.pop();
-              print('🔙 Dialog closed');
+              debugPrint('🔙 Dialog closed');
 
               if (context.mounted) {
-                print('📋 Showing company details');
+                debugPrint('📋 Showing company details');
                 _showCompanyDetails(context, updatedCompany);
                 messenger.showSnackBar(
                   SnackBar(
@@ -1037,7 +1037,7 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
                   ),
                 );
               } else {
-                print('⚠️ Context not mounted after update');
+                debugPrint('⚠️ Context not mounted after update');
               }
             },
             child: const Text(

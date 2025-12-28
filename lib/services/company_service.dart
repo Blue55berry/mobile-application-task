@@ -98,17 +98,17 @@ class CompanyService extends ChangeNotifier {
   // Update company
   Future<bool> updateCompany(Company company) async {
     try {
-      print(
+      debugPrint(
         '🔧 CompanyService.updateCompany called for company: ${company.name}',
       );
-      print('🔧 Company ID: ${company.id}');
-      print('🔧 Team members: ${company.teamMembers}');
+      debugPrint('🔧 Company ID: ${company.id}');
+      debugPrint('🔧 Team members: ${company.teamMembers}');
 
       final db = await DatabaseService().database;
-      print('🔧 Database obtained');
+      debugPrint('🔧 Database obtained');
 
       final companyMap = company.toMap();
-      print('🔧 Company map: $companyMap');
+      debugPrint('🔧 Company map: $companyMap');
 
       final rowsAffected = await db.update(
         'companies',
@@ -116,10 +116,10 @@ class CompanyService extends ChangeNotifier {
         where: 'id = ?',
         whereArgs: [company.id],
       );
-      print('🔧 Rows affected: $rowsAffected');
+      debugPrint('🔧 Rows affected: $rowsAffected');
 
       final index = _companies.indexWhere((c) => c.id == company.id);
-      print('🔧 Company index in list: $index');
+      debugPrint('🔧 Company index in list: $index');
 
       if (index != -1) {
         _companies[index] = company;
@@ -127,19 +127,19 @@ class CompanyService extends ChangeNotifier {
         // Update active company if it was updated
         if (_activeCompany?.id == company.id) {
           _activeCompany = company;
-          print('🔧 Updated active company');
+          debugPrint('🔧 Updated active company');
         }
 
         notifyListeners();
-        print('✅ Company updated successfully');
+        debugPrint('✅ Company updated successfully');
       } else {
-        print('⚠️ Company not found in local list');
+        debugPrint('⚠️ Company not found in local list');
       }
 
       return true;
     } catch (e, stackTrace) {
-      print('❌ Error updating company: $e');
-      print('Stack trace: $stackTrace');
+      debugPrint('❌ Error updating company: $e');
+      debugPrint('Stack trace: $stackTrace');
       return false;
     }
   }

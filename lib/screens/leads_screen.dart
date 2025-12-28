@@ -1045,7 +1045,8 @@ class LeadsScreenState extends State<LeadsScreen>
                           ? descriptionController.text.trim()
                           : null,
                       createdAt: DateTime.now(),
-                      source: 'phone_import',
+                      source:
+                          'crm', // Mark as CRM lead so it appears in Leads tab
                     );
 
                     await leadsService.addLead(newLead);

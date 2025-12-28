@@ -274,18 +274,19 @@ class CallOverlayService : Service() {
             return
         }
         
-        // Show floating icon immediately with error handling
-        try {
-            showFloatingIcon()
-            Log.d(TAG, "✅ Floating icon shown for incoming call")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error showing floating icon", e)
-        }
-        
         // Mark as incoming call for tracking
         isIncomingCall = true
         
-        // Query lead FIRST, then show correct popup (no flash!)
+        // OPTIMIZED: Show both icon and popup IMMEDIATELY for instant feedback
+        try {
+            showFloatingIcon()
+            showPopup() // Show popup immediately with loading state
+            Log.d(TAG, "✅ Floating icon and popup shown immediately for incoming call")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error showing overlay", e)
+        }
+        
+        // Query in background and update popup content when ready
         queryLeadAndShowOverlay(phoneNumber, isIncoming = true)
         updateNotification("Incoming call: ${phoneNumber ?: "Unknown"}")
     }
@@ -306,13 +307,16 @@ class CallOverlayService : Service() {
             return
         }
         
+        // OPTIMIZED: Show both icon and popup IMMEDIATELY for instant feedback
         try {
             showFloatingIcon()
-            Log.d(TAG, "✅ Floating icon shown for outgoing call")
+            showPopup() // Show popup immediately with loading state
+            Log.d(TAG, "✅ Floating icon and popup shown immediately for outgoing call")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error showing floating icon", e)
+            Log.e(TAG, "❌ Error showing overlay", e)
         }
         
+        // Query in background and update popup content when ready
         queryLeadAndShowOverlay(phoneNumber, isIncoming = false)
         updateNotification("Outgoing call: ${phoneNumber ?: "Unknown"}")
     }
@@ -338,16 +342,16 @@ class CallOverlayService : Service() {
             checkAndSendAutoReply(currentPhoneNumber!!)
         }
 
-        // Keep popup visible if it contains saved data, only remove floating icon
+        // FIXED: Auto-hide both popup and floating icon when call ends
         removeFloatingIcon()
-        
-        // Don't remove popup - let user manually close it to review saved details
-        // removePopup() - COMMENTED OUT to keep popup visible
+        removePopup()
         
         // Reset call tracking
         isIncomingCall = false
         callStartTime = 0
-        updateNotification("Call ended - Review details")
+        currentPhoneNumber = null
+        currentLead = null
+        updateNotification("Monitoring calls...")
     }
 
     private fun logIncomingCall(phoneNumber: String, durationSeconds: Int) {
@@ -398,7 +402,7 @@ class CallOverlayService : Service() {
         if (phoneNumber == null) return
         
         Log.d(TAG, "🔍 ===== QUERY START =====")
-        Log.d(TAG, "📞 Incoming phone number: '$phoneNumber'")
+        Log.d(TAG, "📞 Phone number: '$phoneNumber'")
         
         // Reset query state
         isQueryComplete = false
@@ -415,12 +419,8 @@ class CallOverlayService : Service() {
             Log.d(TAG, "   Contact Name: ${contactName ?: "null"}")
             Log.d(TAG, "   CRM Lead: ${crmLead?.name ?: "null"} (ID: ${crmLead?.id ?: "N/A"})")
             
-            // IMPROVED LOGIC:
-            // 1. If contact exists in SBS database -> Show saved contact popup
-            // 2. If not in SBS but in phone contacts -> Show save form with pre-filled name
-            // 3. If completely unknown -> Show save form with empty fields
-            
-            currentLead = crmLead  // Only set if actually in SBS database
+            // Update current lead state
+            currentLead = crmLead
             
             // Show debug toast
             withContext(Dispatchers.Main) {
@@ -431,26 +431,18 @@ class CallOverlayService : Service() {
                 } else {
                     "❌ Unknown number: $phoneNumber"
                 }
-                Toast.makeText(this@CallOverlayService, message, Toast.LENGTH_LONG).show()
-            }
-            
-            // Store phone contact name for form pre-fill (used in createNewLeadFormPopup)
-            if (contactName != null && crmLead == null) {
-                // Contact exists in phone but not in SBS
-                // We'll use this in the form to pre-fill the name
-                Log.d(TAG, "📱 Phone contact '$contactName' not in SBS - will show save form")
+                Toast.makeText(this@CallOverlayService, message, Toast.LENGTH_SHORT).show()
             }
             
             isQueryComplete = true
             
-            // CRITICAL: Refresh popup with correct type
+            // OPTIMIZED: Update popup with query results
+            // Recreate popup to show correct content (saved contact vs new form)
             withContext(Dispatchers.Main) {
-                // Remove old popup first, then show new one with updated currentLead
+                // Remove and show popup to refresh with updated currentLead state
                 removePopup()
-                showFloatingIcon()
                 showPopup()
-                
-                Log.d(TAG, "🎯 Refreshed popup: ${if (currentLead != null) "SAVED CONTACT DETAILS" else "SAVE FORM"}")
+                Log.d(TAG, "🎯 Updated popup: ${if (currentLead != null) "SAVED CONTACT" else "NEW CONTACT FORM"}")
             }
         }
     }
@@ -1032,12 +1024,12 @@ class CallOverlayService : Service() {
             ).apply {
                 setMargins((4 * density).toInt(), 0, (4 * density).toInt(), 0)
             }
-            text = "💬"
+            text = "📱" // SMS/Message icon
             gravity = Gravity.CENTER
             textSize = 20f
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#25D366"))
+                setColor(Color.parseColor("#34B7F1")) // Telegram/Messages blue
             }
             setOnClickListener {
                 val message = "Hello ${name}, contacting you from SBS"
@@ -1063,7 +1055,7 @@ class CallOverlayService : Service() {
             ).apply {
                 setMargins((4 * density).toInt(), 0, (4 * density).toInt(), 0)
             }
-            text = "📧"
+            text = "✉" // Gmail envelope icon
             gravity = Gravity.CENTER
             textSize = 20f
             background = GradientDrawable().apply {
@@ -1105,7 +1097,7 @@ class CallOverlayService : Service() {
             ).apply {
                 setMargins((4 * density).toInt(), 0, (4 * density).toInt(), 0)
             }
-            text = "📞"
+            text = "☎" // Phone call icon
             gravity = Gravity.CENTER
             textSize = 20f
             background = GradientDrawable().apply {
@@ -1150,14 +1142,23 @@ class CallOverlayService : Service() {
             setBackgroundColor(Color.parseColor("#333355")) // Subtle divider
         })
 
-        // ===== ADD LABEL BUTTON (Pill-shaped) =====
+        // ===== ADD LABEL SECTION (Button + Current Labels) =====
+        val labelContainer = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = (12 * density).toInt()
+            }
+            orientation = LinearLayout.HORIZONTAL
+        }
+        
         val addLabelButton = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                gravity = Gravity.START
-                bottomMargin = (12 * density).toInt()
+                setMargins(0, 0, (8 * density).toInt(), 0)
             }
             text = "Add Label +"
             textSize = 15f // Slightly larger
@@ -1173,7 +1174,30 @@ class CallOverlayService : Service() {
                 showLabelSelector(this)
             }
         }
-        cardView.addView(addLabelButton)
+        labelContainer.addView(addLabelButton)
+        
+        // Show current label/category chip
+        val currentCategory = currentLead?.category
+        if (!currentCategory.isNullOrEmpty()) {
+            val labelChip = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                text = currentCategory
+                textSize = 14f
+                setTextColor(Color.WHITE)
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setPadding((16 * density).toInt(), (10 * density).toInt(), (16 * density).toInt(), (10 * density).toInt())
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#6C5CE7")) // Purple label background
+                    cornerRadius = 18 * density
+                }
+            }
+            labelContainer.addView(labelChip)
+        }
+        
+        cardView.addView(labelContainer)
 
 
         // ===== AUTOMATIC MESSAGES SECTION =====
